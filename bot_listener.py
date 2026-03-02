@@ -4,6 +4,7 @@ import yfinance as yf
 from openai import OpenAI
 from datetime import datetime
 import time
+import pandas as pd
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
@@ -85,6 +86,26 @@ def get_asset_data(ticker, period="5d"):
     prices = [float(v) for v in data.values.flatten() if str(v) != 'nan']
     dates = [str(d.date()) for d in data.index]
     return prices, dates
+
+def compute_rsi(ticker, period=14):
+    data = yf.download(ticker, period="30d", interval="1d")["Close"]
+    data = data.dropna()
+
+    if len(data) < period:
+        return None
+
+    delta = data.diff()
+
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
+
+    avg_gain = gain.rolling(window=period).mean()
+    avg_loss = loss.rolling(window=period).mean()
+
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+
+    return float(rsi.iloc[-1])
 
 def generate_trade_signal(asset_name, ticker, news_list):
     prices, dates = get_asset_data(ticker)
@@ -183,7 +204,52 @@ def handle_command(chat_id, text):
         message = f"Analyse ETH - {datetime.now().strftime('%d/%m/%Y %H:%M')}\n\n{signal}"
         send_to_telegram(chat_id, message)
         print("Analyse ETH envoyee !")
+    elif text.startswith("/rsi"):
+        parts = text.split()
 
+        # Actif par défaut
+        ticker = "ETH-USD"
+        asset_name = "Ethereum (ETH)"
+
+        if len(parts) > 1:
+            if parts[1] == "gold":
+                ticker = "GC=F"
+                asset_name = "OR (GOLD)"
+            elif parts[1] == "btc":
+                ticker = "BTC-USD"
+                asset_name = "Bitcoin (BTC)"
+            elif parts[1] == "sp500":
+                ticker = "^GSPC"
+                asset_name = "S&P 500"
+
+        send_to_telegram(chat_id, f"Calcul RSI en cours pour {asset_name}...")
+
+        try:
+            rsi_value = compute_rsi(ticker)
+
+            if rsi_value is None:
+                send_to_telegram(chat_id, "Donnees insuffisantes pour calculer le RSI.")
+                return
+
+            if rsi_value < 30:
+                zone = "SURVENTE (zone potentiellement haussiere)"
+            elif rsi_value > 70:
+                zone = "SURACHAT (zone potentiellement baissiere)"
+            else:
+                zone = "NEUTRE"
+
+            message = (
+                f"RSI (14) - {asset_name}\n\n"
+                f"Valeur actuelle : {rsi_value:.2f}\n"
+                f"Zone : {zone}"
+            )
+
+            send_to_telegram(chat_id, message)
+
+        except Exception as e:
+            print(e)
+            send_to_telegram(chat_id, "Erreur lors du calcul du RSI.")
+            
     elif text == "/start" or text == "/help":
         send_to_telegram(chat_id, 
             "Bonjour ! Voici les commandes disponibles :\n\n"
@@ -213,5 +279,4 @@ while True:
         if text and chat_id:
             print(f"Message recu : {text}")
             handle_command(chat_id, text)
-
     time.sleep(1)

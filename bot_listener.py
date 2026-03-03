@@ -19,7 +19,7 @@ GROQ_MODEL = "llama-3.3-70b-versatile"
 TICKERS = ["BTC-USD", "ETH-USD", "GC=F", "^GSPC", "^DJI", "^IXIC", "AAPL", "MSFT", "NVDA", "TSLA", "AMZN"]
 
 # Lien de paiement (mets ton lien Stripe / PayPal / SumUp ici)
-PAYMENT_LINK = "https://www.paypal.com/paypalme/armandmdlnt"
+PAYMENT_LINK = "https://buy.stripe.com/ton_lien_ici"
 PRIX_MENSUEL = "9.99€"
 PRIX_ANNUEL  = "79.99€"
 
@@ -113,6 +113,9 @@ def main_menu(chat_id):
                 [
                     {"text": "👤 Mon Abonnement","callback_data": "/moncompte"},
                     {"text": "❓ Aide",          "callback_data": "/help"}
+                ],
+                [
+                    {"text": "🎰 Pépite du jour","callback_data": "/chance"}
                 ]
             ]
         }
@@ -274,9 +277,108 @@ Format telephone avec emojis :
 Max 1200 caracteres."""
     return call_groq(prompt, max_tokens=600, temperature=0.3)
 
+def generate_hidden_gem(news_list):
+    today = datetime.now().strftime('%d/%m/%Y')
+
+    # Liste d'actifs peu connus à analyser
+    candidates = {
+        # Cryptos small cap
+        "RENDER-USD": "Render (RNDR)",
+        "INJ-USD": "Injective (INJ)",
+        "FET-USD": "Fetch.ai (FET)",
+        "OCEAN-USD": "Ocean Protocol (OCEAN)",
+        "AR-USD": "Arweave (AR)",
+        "ROSE-USD": "Oasis Network (ROSE)",
+        "BAND-USD": "Band Protocol (BAND)",
+        "CELO-USD": "Celo (CELO)",
+        # Actions small/mid cap
+        "RKLB": "Rocket Lab (RKLB)",
+        "IONQ": "IonQ (IONQ)",
+        "ACHR": "Archer Aviation (ACHR)",
+        "JOBY": "Joby Aviation (JOBY)",
+        "LUNR": "Intuitive Machines (LUNR)",
+        "SERV": "Serve Robotics (SERV)",
+    }
+
+    # Récupère les données de tous les candidats
+    tickers = list(candidates.keys())
+    try:
+        data = yf.download(tickers, period="30d", interval="1d", progress=False)["Close"]
+        change_7d = data.pct_change(periods=7).iloc[-1] * 100
+        change_30d = data.pct_change(periods=30).iloc[-1] * 100
+        latest = data.iloc[-1]
+    except:
+        return "Impossible de récupérer les données pour cette analyse."
+
+    # Construit le tableau des actifs
+    assets_info = []
+    for ticker, name in candidates.items():
+        try:
+            p = float(latest[ticker])
+            c7 = float(change_7d[ticker])
+            c30 = float(change_30d[ticker])
+            if not (pd.isna(p) or pd.isna(c7) or pd.isna(c30)):
+                assets_info.append(f"- {name}: prix={p:.4f} | 7j={c7:+.1f}% | 30j={c30:+.1f}%")
+        except:
+            continue
+
+    news_text = "\n".join(news_list[:8])
+
+    prompt = f"""Tu es un analyste spécialisé dans la détection de pépites financières sous-cotées.
+Aujourd'hui le {today}
+
+ACTIFS SMALL CAP DISPONIBLES (crypto & actions) :
+{chr(10).join(assets_info)}
+
+ACTUALITES DU MOMENT :
+{news_text}
+
+Analyse ces actifs et choisis UN SEUL qui a selon toi le plus fort potentiel d'explosion à court terme (1-4 semaines).
+Choisis des actifs peu connus, pas Bitcoin ou Ethereum.
+
+Réponds en français avec emojis, format téléphone :
+
+🎰 *PÉPITE DU JOUR* : [Nom de l'actif]
+
+*POURQUOI CET ACTIF ?*
+- Raison technique (tendance, momentum, volume)
+- Raison fondamentale (secteur, catalyseur, narrative)
+- Contexte macro favorable
+
+*POTENTIEL* : +XX% à +XX% possible
+*HORIZON* : X à X semaines
+*RISQUE* : Faible / Modéré / Élevé
+
+*COMMENT EN ACHETER* : [Plateforme recommandée]
+
+⚠️ _Ceci n'est pas un conseil financier. Investis uniquement ce que tu peux te permettre de perdre._
+
+Maximum 1500 caractères. Sois enthousiaste mais honnête sur les risques."""
+
+    return call_groq(prompt, max_tokens=700, temperature=0.6)
+
 # ================== COMMANDES ==================
 
-def cmd_start(chat_id, name=""):
+def cmd_chance(chat_id):
+    if not is_premium(chat_id):
+        premium_lock_msg(chat_id)
+        return
+    send_message(chat_id,
+        "🎰 *Recherche de la pépite du jour...*\n"
+        "Analyse de 15 actifs sous-cotés en cours (~30s) 🔍"
+    )
+    try:
+        news = get_news()
+        gem = generate_hidden_gem(news)
+        send_message(chat_id,
+            f"🎰 *PÉPITE DU JOUR — {datetime.now().strftime('%d/%m/%Y %H:%M')}*\n\n{gem}"
+        )
+    except Exception as e:
+        print(f"Erreur /chance : {e}")
+        send_message(chat_id, "❌ Erreur lors de l'analyse. Réessaie dans quelques instants.")
+    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu(chat_id))
+
+
     register_user(chat_id, name)
     if is_premium(chat_id):
         msg = (
@@ -291,6 +393,7 @@ def cmd_start(chat_id, name=""):
             "🥇 `/gold` — Signal BUY/SHORT Or\n"
             "🔷 `/eth` — Signal BUY/SHORT ETH\n"
             "📊 `/rsi btc/eth/gold/sp500` — RSI\n"
+            "🎰 `/chance` — Pépite du jour\n"
             "━━━━━━━━━━━━━━━━━━━━"
         )
     else:
@@ -576,6 +679,8 @@ def handle_command(chat_id, text, user_name=""):
         cmd_premium_info(chat_id)
     elif t == "/moncompte":
         cmd_moncompte(chat_id)
+    elif t == "/chance":
+        cmd_chance(chat_id)
     else:
         # Si l'utilisateur envoie un message libre (ex: preuve de paiement)
         if not is_premium(chat_id):

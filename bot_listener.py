@@ -104,7 +104,8 @@ def main_menu(chat_id):
                     {"text": "📊 RSI",             "callback_data": "/menu_rsi"}
                 ],
                 [
-                    {"text": "🏆 Top 5 Actions",  "callback_data": "/top"}
+                    {"text": "🏆 Top 5 Actions",  "callback_data": "/top"},
+                    {"text": "💬 Citation",        "callback_data": "/quote"}
                 ],
                 [
                     {"text": "🏠 Accueil",         "callback_data": "/accueil"},
@@ -395,6 +396,80 @@ Maximum 1500 caractères. Sois enthousiaste mais honnête sur les risques."""
 
 # ================== COMMANDES ==================
 
+def generate_quote():
+    """Génère une citation exclusive du jour sur les marchés"""
+    today = datetime.now().strftime('%d/%m/%Y')
+    prompt = f"""Tu es un trader légendaire avec 30 ans d'expérience.
+Aujourd'hui le {today}.
+
+Génère UNE SEULE citation courte et percutante sur :
+- La psychologie du trading
+- La discipline financière
+- La lecture des marchés
+- La gestion du risque
+
+Format EXACT (rien d'autre) :
+"[citation en français, max 120 caractères]"
+— [Prénom Nom, trader ou investisseur célèbre réel]
+
+Exemples de style :
+"Les marchés peuvent rester irrationnels plus longtemps que vous ne pouvez rester solvable."
+— John Maynard Keynes
+
+Sois inspirant, profond, et précis. Une seule citation."""
+    try:
+        return call_groq(prompt, max_tokens=120, temperature=0.8)
+    except:
+        return '"Le marché récompense la patience et punit l\'impatience."\n— Warren Buffett'
+
+def cmd_welcome_premium(chat_id, name):
+    """Message de bienvenue VIP envoyé à l'activation du premium"""
+    now = datetime.now()
+    send_message(chat_id,
+        f"✨ ✨ ✨\n\n"
+        f"*Bienvenue dans le cercle Premium, {name}.*\n\n"
+        f"✨ ✨ ✨"
+    )
+    time.sleep(1)
+    quote = generate_quote()
+    send_message(chat_id,
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💎 *TON ACCÈS VIP EST ACTIF*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"À partir de maintenant, tu rejoins une sélection d'investisseurs "
+        f"qui reçoivent chaque jour les meilleures analyses du marché, "
+        f"vérifiées par des professionnels de la finance.\n\n"
+        f"🌅 Dès demain matin à *8h00*, ton briefing marché t'attendra.\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💬 *Citation du jour*\n\n"
+        f"_{quote}_\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"⬇️ *Explore tes outils exclusifs :*",
+        reply_markup=main_menu(chat_id)
+    )
+
+def cmd_quote(chat_id):
+    """Citation exclusive du jour — Premium only"""
+    if not is_premium(chat_id):
+        premium_lock_msg(chat_id)
+        return
+    send_message(chat_id, "✍️ *Génération de ta citation du jour...*")
+    quote = generate_quote()
+    now = datetime.now().strftime('%d/%m/%Y')
+    send_message(chat_id,
+        f"💬 *CITATION DU JOUR — {now}*\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"_{quote}_\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━",
+        reply_markup={
+            "inline_keyboard": [
+                [{"text": "🔄 Nouvelle citation", "callback_data": "/quote"}],
+                [{"text": "🔙 Menu",              "callback_data": "/menu_retour"}]
+            ]
+        }
+    )
+
+
 def cmd_chance(chat_id):
     if not is_premium(chat_id):
         premium_lock_msg(chat_id)
@@ -417,63 +492,57 @@ def cmd_chance(chat_id):
 
 def cmd_accueil(chat_id, name=""):
     if is_premium(chat_id):
+        now = datetime.now()
+        hour = now.hour
+        if 5 <= hour < 12:
+            salutation, emoji_salut = "Bonjour", "🌅"
+        elif 12 <= hour < 18:
+            salutation, emoji_salut = "Bon après-midi", "☀️"
+        else:
+            salutation, emoji_salut = "Bonsoir", "🌙"
         msg = (
-            f"🏠 *TABLEAU DE BORD — PREMIUM* 👑\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💎 *ESPACE MEMBRE PREMIUM*\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"Bonjour *{name}* ! Voici tout ce que tu peux faire :\n\n"
-            f"📰 *ACTU MARCHÉ*\n"
-            f"└ Résumé complet des marchés financiers\n"
-            f"└ Actualités business FR & EN\n"
-            f"└ Direction de chaque actif + probabilité\n\n"
-            f"🏆 *TOP 5 ACTIONS*\n"
-            f"└ Les 5 actions les plus performantes du jour\n"
-            f"└ Le Flop 3 à éviter absolument\n\n"
-            f"🥇 *SIGNAL GOLD* / 🔷 *SIGNAL ETH*\n"
-            f"└ BUY ou SHORT avec niveau de conviction %\n"
-            f"└ Objectif de prix + Stop Loss précis\n"
-            f"└ Analyse technique & fondamentale\n\n"
-            f"📊 *RSI EN TEMPS RÉEL*\n"
-            f"└ Bitcoin, Ethereum, Or, S&P 500\n"
-            f"└ Barre visuelle survente / surachat\n"
-            f"└ Conseil clair pour chaque actif\n\n"
-            f"🎰 *PÉPITE DU JOUR*\n"
-            f"└ 1 crypto ou action peu connue sélectionnée\n"
-            f"└ Fort potentiel d'explosion court terme\n"
-            f"└ Potentiel %, horizon & niveau de risque\n\n"
-            f"🌅 *ENVOI AUTO À 8H00*\n"
-            f"└ Résumé marché chaque matin automatiquement\n\n"
+            f"{emoji_salut} *{salutation}, {name}*\n\n"
+            f"Voici tes outils exclusifs :\n\n"
+            f"📰 *Actu Marché* — Résumé + direction des actifs\n"
+            f"📈 *Signaux* — BUY/SHORT Gold & ETH avec Stop Loss\n"
+            f"📊 *RSI* — BTC, ETH, Or, S&P500 en temps réel\n"
+            f"🏆 *Top 5* — Meilleures & pires actions du jour\n"
+            f"🎰 *Pépite du jour* — Actif sous-coté à fort potentiel\n"
+            f"💬 *Citation* — Sagesse des grands traders\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"🔄 *Mis à jour plusieurs fois par mois*\n"
-            f"✔️ *Efficacité vérifiée par des pros de la finance*\n"
-            f"🛎️ *SAV disponible 7j/7 — /sav*\n"
-            f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"⬇️ *Que veux-tu analyser aujourd'hui ?*"
+            f"🌅 Briefing auto chaque matin à *8h00*\n"
+            f"🔄 Mis à jour plusieurs fois par mois\n"
+            f"✔️ Vérifié par des professionnels de la finance\n"
+            f"━━━━━━━━━━━━━━━━━━━━"
         )
     else:
         msg = (
             f"🏠 *ASSISTANT MARCHÉ FINANCIER*\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
             f"🔄 *Mis à jour plusieurs fois par mois*\n"
-            f"✔️ *Efficacité vérifiée en continu par des professionnels de la finance*\n\n"
+            f"✔️ *Vérifié en continu par des professionnels de la finance*\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
-            f"🆓 *GRATUIT — Disponible maintenant*\n"
+            f"🆓 *GRATUIT*\n"
             f"✅ *Actu Marché* — Résumé quotidien des marchés\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
             f"👑 *PREMIUM — {PRIX_MENSUEL}/mois*\n"
-            f"✅ *Signal Gold & ETH* — BUY ou SHORT + Stop Loss\n"
-            f"✅ *Top 5 Actions* — Les meilleures du jour\n"
-            f"✅ *RSI* — BTC, ETH, Or, S&P500 en temps réel\n"
-            f"✅ *Pépite du jour* — Crypto/action à fort potentiel\n"
-            f"✅ *Résumé auto à 8h* — Chaque matin sans rien faire\n"
-            f"✅ *Analyses illimitées* — 24h/24, 7j/7\n\n"
+            f"✅ Signaux BUY/SHORT Gold & ETH + Stop Loss\n"
+            f"✅ RSI BTC, ETH, Or, S&P500 en temps réel\n"
+            f"✅ Top 5 actions + Flop 3 du jour\n"
+            f"✅ Pépite du jour — actif à fort potentiel\n"
+            f"✅ Citation exclusive des grands traders\n"
+            f"✅ Briefing auto chaque matin à 8h\n"
+            f"✅ Analyses illimitées 24h/24\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
-            f"💳 *Paiement sécurisé via PayPal*\n"
-            f"⚡ Accès activé *quasi-instantanément* après paiement\n"
-            f"🛎️ *SAV disponible 7j/7 — /sav*\n\n"
-            f"⬇️ *Commence gratuitement ou passe Premium :*"
+            f"💳 Paiement via PayPal\n"
+            f"⚡ Accès *quasi-instantané* après paiement\n"
+            f"🛎️ SAV disponible 7j/7\n\n"
+            f"⬇️ *Commence ou passe Premium :*"
         )
     send_message(chat_id, msg, reply_markup=main_menu(chat_id))
-
 
 
 def cmd_start(chat_id, name=""):
@@ -483,8 +552,57 @@ def cmd_start(chat_id, name=""):
 
 def cmd_moncompte(chat_id):
     user = get_user(chat_id)
+    now = datetime.now().strftime('%d/%m/%Y')
     if is_admin(chat_id):
-        msg = "👑 *Ton Compte — ADMIN*\n\nAccès illimité à tout."
+        msg = (
+            f"🛡️ *COMPTE ADMINISTRATEUR*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"Accès illimité à toutes les fonctionnalités.\n"
+            f"Commandes admin : /addpremium | /removepremium | /listusers | /stats"
+        )
+        send_message(chat_id, msg, reply_markup={"inline_keyboard": [[{"text": "🔙 Menu", "callback_data": "/menu_retour"}]]})
+    elif is_premium(chat_id):
+        expiry = user.get("expiry", "Illimité")
+        msg = (
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💎 *CARTE MEMBRE PREMIUM*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👤 *{user.get('name', 'Membre')}*\n"
+            f"🏆 Statut : *Premium Actif* ✅\n"
+            f"📅 Valable jusqu'au : *{expiry}*\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"✅ Signaux BUY/SHORT illimités\n"
+            f"✅ RSI tous les actifs\n"
+            f"✅ Top 5 & Pépite du jour\n"
+            f"✅ Citation exclusive\n"
+            f"✅ Briefing auto 8h\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"_Merci de faire partie du cercle Premium._ 🙏"
+        )
+        send_message(chat_id, msg, reply_markup={
+            "inline_keyboard": [
+                [{"text": "🛎️ Contacter le SAV", "callback_data": "/sav"}],
+                [{"text": "🔙 Menu",              "callback_data": "/menu_retour"}]
+            ]
+        })
+    else:
+        msg = (
+            f"👤 *TON COMPTE*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"Nom : *{user.get('name', 'Membre')}*\n"
+            f"Statut : 🆓 Plan Gratuit\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"Passe en *Premium* pour débloquer tous les outils :\n"
+            f"Signaux, RSI, Top 5, Pépite du jour, Citation...\n\n"
+            f"⚡ Activation *quasi-instantanée*"
+        )
+        send_message(chat_id, msg, reply_markup={
+            "inline_keyboard": [
+                [{"text": f"👑 Passer Premium — {PRIX_MENSUEL}/mois", "url": PAYMENT_LINK}],
+                [{"text": "🛎️ SAV",  "callback_data": "/sav"}],
+                [{"text": "🔙 Menu", "callback_data": "/menu_retour"}]
+            ]
+        })
     elif is_premium(chat_id):
         expiry = user.get("expiry", "Illimité")
         msg = (
@@ -500,39 +618,29 @@ def cmd_moncompte(chat_id):
             f"Nom : {user.get('name', 'Inconnu')}\n"
             f"Statut : 🆓 Plan gratuit\n\n"
             f"Passe en *Premium* pour tout débloquer !\n"
-            f"💰 *{PRIX_MENSUEL}/mois* ou *{PRIX_ANNUEL}/an*"
-        )
-    send_message(chat_id, msg, reply_markup={
-        "inline_keyboard": [
-            [{"text": f"💳 Passer Premium — {PRIX_MENSUEL}/mois", "url": PAYMENT_LINK}],
-            [{"text": "🔙 Menu principal", "callback_data": "/start"}]
-        ]
-    } if not is_premium(chat_id) else {
-        "inline_keyboard": [[{"text": "🔙 Menu principal", "callback_data": "/start"}]]
-    })
-
 def cmd_premium_info(chat_id):
     send_message(chat_id,
-        f"👑 *PASSER EN PREMIUM*\n\n"
-        f"💰 *{PRIX_MENSUEL}/mois* — Résiliable à tout moment\n"
-        f"💰 *{PRIX_ANNUEL}/an* — 2 mois offerts\n\n"
-        f"✅ Signaux BUY/SHORT Gold & ETH\n"
-        f"✅ RSI BTC, ETH, Gold, S&P500\n"
+        f"👑 *PASSER EN PREMIUM — {PRIX_MENSUEL}/mois*\n\n"
+        f"✅ Signaux BUY/SHORT Gold & ETH + Stop Loss\n"
+        f"✅ RSI BTC, ETH, Or, S&P500\n"
         f"✅ Top 5 & Flop 3 actions du jour\n"
-        f"✅ Résumé marché automatique à 8h\n"
-        f"✅ Analyses illimitées 24/7\n\n"
+        f"✅ Pépite du jour — actif à fort potentiel\n"
+        f"✅ Citation exclusive des grands traders\n"
+        f"✅ Briefing marché auto à 8h chaque matin\n"
+        f"✅ Analyses illimitées 24h/24\n\n"
         f"*Comment ça marche ?*\n"
         f"1️⃣ Clique sur le bouton ci-dessous\n"
-        f"2️⃣ Effectue le paiement\n"
-        f"3️⃣ Envoie la preuve de paiement ici\n"
-        f"4️⃣ Ton accès est activé sous 1h ✅",
+        f"2️⃣ Effectue le paiement via PayPal\n"
+        f"3️⃣ Envoie ta confirmation de paiement ici\n"
+        f"4️⃣ Ton accès est activé *quasi-instantanément* ⚡",
         reply_markup={
             "inline_keyboard": [
-                [{"text": f"💳 S'abonner maintenant — {PRIX_MENSUEL}/mois", "url": PAYMENT_LINK}],
-                [{"text": "🔙 Retour", "callback_data": "/start"}]
+                [{"text": f"💳 S'abonner — {PRIX_MENSUEL}/mois", "url": PAYMENT_LINK}],
+                [{"text": "🔙 Retour",                           "callback_data": "/menu_retour"}]
             ]
         }
     )
+
 
 def cmd_actu(chat_id):
     send_message(chat_id, "⏳ *Récupération des données...*\nAnalyse en cours (~30s) ☕")
@@ -715,11 +823,7 @@ def cmd_admin(chat_id, text):
         days = int(parts[3])
         expiry = add_premium(target_id, name, days)
         send_message(chat_id, f"✅ *Premium activé*\nUser: {name} ({target_id})\nExpiration: {expiry}")
-        send_message(int(target_id),
-            f"🎉 *Ton accès Premium a été activé !*\n\n"
-            f"Expiration : {expiry}\n\n"
-            f"Tape /start pour accéder à toutes les fonctionnalités 👑"
-        )
+        cmd_welcome_premium(int(target_id), name)
 
     # /removepremium [chat_id]
     elif parts[0] == "/removepremium" and len(parts) >= 2:
@@ -789,13 +893,23 @@ def check_auto_send():
             users = load_users()
             # Envoyer à tous les premium + admin
             targets = [TELEGRAM_CHAT_ID] + [uid for uid, u in users.items() if u["plan"] == "premium"]
+            news = get_news()
+            market = get_market_data()
+            summary = generate_summary(news, market)
+            quote = generate_quote()
             for target in set(targets):
-                send_message(target, "🌅 *Bonjour ! Voici ton résumé marché du matin.*")
-                news = get_news()
-                market = get_market_data()
-                summary = generate_summary(news, market)
-                send_message(target, f"📊 *RÉSUMÉ MARCHÉ — {now.strftime('%d/%m/%Y')}*\n\n{summary}")
-                send_message(target, "🔄 *Menu rapide :*", reply_markup=main_menu(int(target)))
+                target_int = int(target)
+                user_data = users.get(str(target), {})
+                uname = user_data.get("name", "")
+                greeting = f"🌅 *Bonjour {uname} !*" if uname else "🌅 *Bonjour !*"
+                send_message(target_int,
+                    f"{greeting}\n\n"
+                    f"💬 _{quote}_\n\n"
+                    f"━━━━━━━━━━━━━━━━━━━━\n"
+                    f"Voici ton briefing marché du matin 👇"
+                )
+                send_message(target_int, f"📊 *RÉSUMÉ MARCHÉ — {now.strftime('%d/%m/%Y')}*\n\n{summary}")
+                send_message(target_int, "⬇️ *Tes outils du jour :*", reply_markup=main_menu(target_int))
             print("Envoi auto 8h OK !")
         except Exception as e:
             print(f"Erreur envoi auto : {e}")
@@ -833,6 +947,8 @@ def handle_command(chat_id, text, user_name=""):
         cmd_moncompte(chat_id)
     elif t == "/chance":
         cmd_chance(chat_id)
+    elif t == "/quote":
+        cmd_quote(chat_id)
     elif t == "/menu_signaux":
         send_message(chat_id, "📈 *Signaux de trading — choisis un actif :*", reply_markup=menu_signaux())
     elif t == "/menu_rsi":

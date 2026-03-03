@@ -396,31 +396,46 @@ Maximum 1500 caractères. Sois enthousiaste mais honnête sur les risques."""
 
 # ================== COMMANDES ==================
 
-def generate_quote():
-    """Génère une citation exclusive du jour sur les marchés"""
-    today = datetime.now().strftime('%d/%m/%Y')
-    prompt = f"""Tu es un trader légendaire avec 30 ans d'expérience.
-Aujourd'hui le {today}.
+CITATIONS = [
+    ("L'investissement, c'est mettre de l'argent aujourd'hui pour en avoir plus demain.", "Warren Buffett"),
+    ("Le marché est un dispositif qui transfère de l'argent des impatients aux patients.", "Warren Buffett"),
+    ("Le risque vient de ne pas savoir ce que vous faites.", "Warren Buffett"),
+    ("Ne jamais investir dans ce que vous ne comprenez pas.", "Peter Lynch"),
+    ("Le temps sur le marché bat le timing du marché.", "Ken Fisher"),
+    ("Les marchés peuvent rester irrationnels plus longtemps que vous ne pouvez rester solvable.", "John Maynard Keynes"),
+    ("Achetez quand tout le monde vend, vendez quand tout le monde achète.", "J. Paul Getty"),
+    ("La bourse est le seul endroit où on vend moins quand les soldes commencent.", "Warren Buffett"),
+    ("Diversification is protection against ignorance.", "Warren Buffett"),
+    ("Il faut être craintif quand les autres sont avides, et avide quand les autres sont craintifs.", "Warren Buffett"),
+    ("La première règle : ne jamais perdre d'argent. La deuxième : ne jamais oublier la première.", "Warren Buffett"),
+    ("Un investisseur qui achète et vend frénétiquement paie des frais inutiles et perd sa concentration.", "Peter Lynch"),
+    ("Les corrections de marché sont les meilleures opportunités pour les investisseurs à long terme.", "Peter Lynch"),
+    ("La patience est la vertu la plus précieuse pour un investisseur.", "Charlie Munger"),
+    ("Invert, always invert — comprendre ce qui mène à l'échec pour l'éviter.", "Charlie Munger"),
+    ("Ce n'est pas le marché qui fait perdre de l'argent aux investisseurs, c'est eux-mêmes.", "Benjamin Graham"),
+    ("Le prix est ce que vous payez. La valeur est ce que vous obtenez.", "Warren Buffett"),
+    ("Acheter une action, c'est acheter une part d'une entreprise, pas juste un ticker.", "Benjamin Graham"),
+    ("Les arbres ne montent pas jusqu'au ciel.", "Proverbe de Wall Street"),
+    ("Un bull market peut cacher beaucoup d'erreurs.", "John Templeton"),
+    ("Les quatre mots les plus dangereux en investissement : cette fois c'est différent.", "John Templeton"),
+    ("Il ne faut pas prédire l'avenir, il faut être prêt à toutes les éventualités.", "John Templeton"),
+    ("La volatilité est le prix à payer pour la performance.", "Howard Marks"),
+    ("Savoir ce qu'on ne sait pas est plus utile que de croire savoir ce qu'on ne sait pas.", "Howard Marks"),
+    ("Un portefeuille bien construit résiste à la peur autant qu'à la cupidité.", "Ray Dalio"),
+    ("Cash is king quand tout le monde panique.", "Anonyme, Wall Street"),
+    ("Les marchés montent par escalier et descendent par ascenseur.", "Proverbe boursier"),
+    ("L'or est la mémoire du temps.", "Marc Faber"),
+    ("Vendre trop tôt est toujours une faute. Vendre trop tard en est souvent une autre.", "Anonyme"),
+    ("Dans les marchés comme dans la vie, la discipline sépare les gagnants des perdants.", "Paul Tudor Jones"),
+    ("Je perds de l'argent certains jours. Ce qui compte, c'est combien je perds quand j'ai tort.", "George Soros"),
+]
 
-Génère UNE SEULE citation courte et percutante sur :
-- La psychologie du trading
-- La discipline financière
-- La lecture des marchés
-- La gestion du risque
+def get_daily_quote():
+    """Retourne la citation du jour basée sur la date — toujours la même dans la journée"""
+    day_index = datetime.now().timetuple().tm_yday % len(CITATIONS)
+    text, author = CITATIONS[day_index]
+    return f'"{text}"\n— *{author}*'
 
-Format EXACT (rien d'autre) :
-"[citation en français, max 120 caractères]"
-— [Prénom Nom, trader ou investisseur célèbre réel]
-
-Exemples de style :
-"Les marchés peuvent rester irrationnels plus longtemps que vous ne pouvez rester solvable."
-— John Maynard Keynes
-
-Sois inspirant, profond, et précis. Une seule citation."""
-    try:
-        return call_groq(prompt, max_tokens=120, temperature=0.8)
-    except:
-        return '"Le marché récompense la patience et punit l\'impatience."\n— Warren Buffett'
 
 def cmd_welcome_premium(chat_id, name):
     """Message de bienvenue VIP envoyé à l'activation du premium"""
@@ -431,7 +446,7 @@ def cmd_welcome_premium(chat_id, name):
         f"✨ ✨ ✨"
     )
     time.sleep(1)
-    quote = generate_quote()
+    quote = get_daily_quote()
     send_message(chat_id,
         f"━━━━━━━━━━━━━━━━━━━━\n"
         f"💎 *TON ACCÈS VIP EST ACTIF*\n"
@@ -449,22 +464,19 @@ def cmd_welcome_premium(chat_id, name):
     )
 
 def cmd_quote(chat_id):
-    """Citation exclusive du jour — Premium only"""
     if not is_premium(chat_id):
         premium_lock_msg(chat_id)
         return
-    send_message(chat_id, "✍️ *Génération de ta citation du jour...*")
-    quote = generate_quote()
+    quote = get_daily_quote()
     now = datetime.now().strftime('%d/%m/%Y')
     send_message(chat_id,
         f"💬 *CITATION DU JOUR — {now}*\n\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"
-        f"_{quote}_\n\n"
+        f"{quote}\n\n"
         f"━━━━━━━━━━━━━━━━━━━━",
         reply_markup={
             "inline_keyboard": [
-                [{"text": "🔄 Nouvelle citation", "callback_data": "/quote"}],
-                [{"text": "🔙 Menu",              "callback_data": "/menu_retour"}]
+                [{"text": "🔙 Menu", "callback_data": "/menu_retour"}]
             ]
         }
     )
@@ -883,7 +895,7 @@ def check_auto_send():
             news = get_news()
             market = get_market_data()
             summary = generate_summary(news, market)
-            quote = generate_quote()
+            quote = get_daily_quote()
             for target in set(targets):
                 target_int = int(target)
                 user_data = users.get(str(target), {})
@@ -950,24 +962,19 @@ def handle_command(chat_id, text, user_name=""):
     else:
         # Message libre = ticket SAV ou preuve de paiement
         user = get_user(chat_id)
-        sav_motif = user.get("sav_motif", "")
-        if sav_motif:
-            # L'utilisateur a choisi un motif SAV → c'est un ticket
-            notify_admin_sav(chat_id, user_name, text)
-            # Réinitialise le motif après envoi
-            users = load_users()
-            if str(chat_id) in users:
-                users[str(chat_id)]["sav_motif"] = ""
-                save_users(users)
-            send_message(chat_id,
-                f"✅ *Ton message a bien été envoyé !*\n\n"
-                f"Notre équipe te répondra directement ici dans les meilleurs délais.\n"
-                f"_Merci pour ta patience_ 🙏",
-                reply_markup=main_menu(chat_id)
-            )
-        elif not is_premium(chat_id):
-            # Preuve de paiement
-            notify_admin_sav(chat_id, user_name, f"[PAIEMENT] {text}")
+        sav_motif = user.get("sav_motif", "") or "Non précisé"
+
+        # Dans tous les cas, on traite le message comme un ticket SAV
+        notify_admin_sav(chat_id, user_name, text)
+
+        # Réinitialise le motif SAV
+        users = load_users()
+        if str(chat_id) in users:
+            users[str(chat_id)]["sav_motif"] = ""
+            save_users(users)
+
+        if not is_premium(chat_id) and not sav_motif:
+            # Probablement une preuve de paiement
             send_message(chat_id,
                 "⚡ *Message reçu !*\n\n"
                 "Ton paiement va être vérifié et ton accès activé *quasi-instantanément*.\n"
@@ -976,7 +983,9 @@ def handle_command(chat_id, text, user_name=""):
             )
         else:
             send_message(chat_id,
-                "❓ Commande inconnue.\n_Tape /sav pour contacter le support._",
+                "✅ *Ton message a bien été envoyé !*\n\n"
+                "Notre équipe te répondra directement ici dans les meilleurs délais.\n"
+                "_Merci pour ta patience_ 🙏",
                 reply_markup=main_menu(chat_id)
             )
 

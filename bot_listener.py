@@ -2,9 +2,10 @@ import os
 import requests
 import yfinance as yf
 from openai import OpenAI
-from datetime import datetime
+from datetime import datetime, timedelta
 import time
 import pandas as pd
+import json
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
@@ -12,10 +13,66 @@ os.environ["PYTHONIOENCODING"] = "utf-8"
 NEWSAPI_KEY      = os.getenv("NEWSAPI_KEY")
 GROQ_API_KEY     = os.getenv("GROQ_API_KEY")
 TELEGRAM_TOKEN   = os.getenv("TELEGRAM_TOKEN")
-TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")
+TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID")  # Ton propre chat_id = ADMIN
 
 GROQ_MODEL = "llama-3.3-70b-versatile"
 TICKERS = ["BTC-USD", "ETH-USD", "GC=F", "^GSPC", "^DJI", "^IXIC", "AAPL", "MSFT", "NVDA", "TSLA", "AMZN"]
+
+# Lien de paiement (mets ton lien Stripe / PayPal / SumUp ici)
+PAYMENT_LINK = "https://www.paypal.com/paypalme/armandmdlnt"
+PRIX_MENSUEL = "9.99€"
+PRIX_ANNUEL  = "79.99€"
+
+USERS_FILE = "users.json"
+
+# ================== GESTION ABONNEMENTS ==================
+
+def load_users():
+    if os.path.exists(USERS_FILE):
+        with open(USERS_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f, indent=2)
+
+def is_admin(chat_id):
+    return str(chat_id) == str(TELEGRAM_CHAT_ID)
+
+def get_user(chat_id):
+    users = load_users()
+    return users.get(str(chat_id), {"plan": "free", "expiry": None, "name": "Inconnu"})
+
+def is_premium(chat_id):
+    if is_admin(chat_id):
+        return True
+    user = get_user(chat_id)
+    if user["plan"] == "premium":
+        if user["expiry"] is None:
+            return True
+        expiry = datetime.strptime(user["expiry"], "%Y-%m-%d")
+        return datetime.now() < expiry
+    return False
+
+def add_premium(chat_id, name, days):
+    users = load_users()
+    expiry = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+    users[str(chat_id)] = {"plan": "premium", "expiry": expiry, "name": name}
+    save_users(users)
+    return expiry
+
+def remove_premium(chat_id):
+    users = load_users()
+    if str(chat_id) in users:
+        users[str(chat_id)]["plan"] = "free"
+        save_users(users)
+
+def register_user(chat_id, name):
+    users = load_users()
+    if str(chat_id) not in users:
+        users[str(chat_id)] = {"plan": "free", "expiry": None, "name": name}
+        save_users(users)
 
 # ================== TELEGRAM HELPERS ==================
 
@@ -33,30 +90,65 @@ def answer_callback(callback_query_id):
     url = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/answerCallbackQuery"
     requests.post(url, json={"callback_query_id": callback_query_id}, timeout=5)
 
-def main_menu():
-    return {
-        "inline_keyboard": [
-            [
-                {"text": "📰 Actu Marché",    "callback_data": "/actu"},
-                {"text": "🏆 Top 5 Actions",  "callback_data": "/top"}
-            ],
-            [
-                {"text": "🥇 Analyse Gold",   "callback_data": "/gold"},
-                {"text": "🔷 Analyse ETH",    "callback_data": "/eth"}
-            ],
-            [
-                {"text": "📊 RSI BTC",        "callback_data": "/rsi btc"},
-                {"text": "📊 RSI ETH",        "callback_data": "/rsi eth"}
-            ],
-            [
-                {"text": "📊 RSI Gold",       "callback_data": "/rsi gold"},
-                {"text": "📊 RSI S&P500",     "callback_data": "/rsi sp500"}
-            ],
-            [
-                {"text": "❓ Aide",           "callback_data": "/help"}
+def main_menu(chat_id):
+    if is_premium(chat_id):
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "📰 Actu Marché",   "callback_data": "/actu"},
+                    {"text": "🏆 Top 5 Actions", "callback_data": "/top"}
+                ],
+                [
+                    {"text": "🥇 Analyse Gold",  "callback_data": "/gold"},
+                    {"text": "🔷 Analyse ETH",   "callback_data": "/eth"}
+                ],
+                [
+                    {"text": "📊 RSI BTC",       "callback_data": "/rsi btc"},
+                    {"text": "📊 RSI ETH",       "callback_data": "/rsi eth"}
+                ],
+                [
+                    {"text": "📊 RSI Gold",      "callback_data": "/rsi gold"},
+                    {"text": "📊 RSI S&P500",    "callback_data": "/rsi sp500"}
+                ],
+                [
+                    {"text": "👤 Mon Abonnement","callback_data": "/moncompte"},
+                    {"text": "❓ Aide",          "callback_data": "/help"}
+                ]
             ]
-        ]
-    }
+        }
+    else:
+        return {
+            "inline_keyboard": [
+                [
+                    {"text": "📰 Actu Marché (gratuit)", "callback_data": "/actu"}
+                ],
+                [
+                    {"text": "🔓 Débloquer PREMIUM — " + PRIX_MENSUEL + "/mois", "callback_data": "/premium"}
+                ],
+                [
+                    {"text": "👤 Mon Compte",    "callback_data": "/moncompte"},
+                    {"text": "❓ Aide",          "callback_data": "/help"}
+                ]
+            ]
+        }
+
+def premium_lock_msg(chat_id):
+    send_message(chat_id,
+        "🔒 *Fonctionnalité PREMIUM*\n\n"
+        "Cette analyse est réservée aux abonnés Premium.\n\n"
+        f"✅ Accès illimité à toutes les analyses\n"
+        f"✅ Signaux BUY/SHORT Gold & ETH\n"
+        f"✅ RSI en temps réel (BTC, ETH, Gold, S&P500)\n"
+        f"✅ Top 5 actions du jour\n"
+        f"✅ Résumé marché automatique à 8h\n\n"
+        f"💰 *{PRIX_MENSUEL}/mois* ou *{PRIX_ANNUEL}/an*",
+        reply_markup={
+            "inline_keyboard": [
+                [{"text": f"💳 S'abonner — {PRIX_MENSUEL}/mois", "url": PAYMENT_LINK}],
+                [{"text": "🔙 Retour", "callback_data": "/start"}]
+            ]
+        }
+    )
 
 # ================== DONNEES MARCHE ==================
 
@@ -110,14 +202,12 @@ def get_top5():
 def get_asset_data(ticker, period="5d"):
     data = yf.download(ticker, period=period, interval="1d", progress=False)["Close"]
     data = data.dropna()
-    prices = [float(v) for v in data.values.flatten() if str(v) != 'nan']
-    return prices
+    return [float(v) for v in data.values.flatten() if str(v) != 'nan']
 
 def compute_rsi(ticker, period=14):
     data = yf.download(ticker, period="60d", interval="1d", auto_adjust=True, progress=False)
     if data.empty:
         return None
-    # Fix yfinance multi-index : aplatir les colonnes
     close = data["Close"]
     if hasattr(close, "columns"):
         close = close.iloc[:, 0]
@@ -148,20 +238,13 @@ def generate_summary(news_list, market_str):
     today = datetime.now().strftime('%d/%m/%Y')
     prompt = f"""Tu es un analyste financier senior.
 Aujourd'hui le {today}
-
-ACTUALITES :
-{chr(10).join(news_list)}
-
-MARCHES :
-{market_str}
+ACTUALITES : {chr(10).join(news_list)}
+MARCHES : {market_str}
 
 Reponds en francais avec emojis, format telephone :
-
 *RESUME DES ACTUS* (6-8 points cles)
-*DIRECTION DES MARCHES*
--> Chaque actif : direction + probabilite % + explication courte
+*DIRECTION DES MARCHES* -> Chaque actif : direction + probabilite % + explication courte
 *CONCLUSION* : Tendance generale + probabilite
-
 Maximum 3500 caracteres."""
     return call_groq(prompt, max_tokens=1100)
 
@@ -178,7 +261,6 @@ def generate_trade_signal(asset_name, ticker, news_list):
 Prix : {price_current:,.2f} | Variation : {change_pct:+.2f}%
 Prix 5j : {', '.join([f'{p:,.2f}' for p in prices])}
 SMA 5j : {sma:,.2f} | Position : {'au-dessus' if price_current > sma else 'en-dessous'}
-
 ACTUALITES : {chr(10).join(news_list[:6])}
 
 Format telephone avec emojis :
@@ -189,35 +271,99 @@ Format telephone avec emojis :
 *OBJECTIF* : prix cible
 *STOP LOSS* : niveau
 *CONCLUSION* : 1 phrase
-
 Max 1200 caracteres."""
     return call_groq(prompt, max_tokens=600, temperature=0.3)
 
 # ================== COMMANDES ==================
 
-def cmd_start(chat_id):
-    msg = (
-        "👋 *Bienvenue sur ton Assistant Marché !*\n\n"
-        "📅 Chaque matin à *8h00*, tu recevras automatiquement\n"
-        "un résumé complet des marchés financiers.\n\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "📌 *COMMANDES DISPONIBLES*\n"
-        "━━━━━━━━━━━━━━━━━━━━\n"
-        "📰 `/actu` — Résumé marché + actualités\n"
-        "🏆 `/top` — Top 5 & Flop 3 actions du jour\n"
-        "🥇 `/gold` — Signal BUY/SHORT sur l'Or\n"
-        "🔷 `/eth` — Signal BUY/SHORT sur Ethereum\n"
-        "📊 `/rsi btc` — RSI Bitcoin\n"
-        "📊 `/rsi eth` — RSI Ethereum\n"
-        "📊 `/rsi gold` — RSI Or\n"
-        "📊 `/rsi sp500` — RSI S&P 500\n"
-        "━━━━━━━━━━━━━━━━━━━━\n\n"
-        "⬇️ *Utilise le menu rapide ci-dessous :*"
-    )
-    send_message(chat_id, msg, reply_markup=main_menu())
+def cmd_start(chat_id, name=""):
+    register_user(chat_id, name)
+    if is_premium(chat_id):
+        msg = (
+            f"👑 *Bienvenue {name} — Compte PREMIUM actif !*\n\n"
+            "Tu as accès à toutes les fonctionnalités.\n"
+            "📅 Résumé automatique chaque matin à *8h00*\n\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "📌 *TES COMMANDES*\n"
+            "━━━━━━━━━━━━━━━━━━━━\n"
+            "📰 `/actu` — Résumé marché + actualités\n"
+            "🏆 `/top` — Top 5 & Flop 3 actions\n"
+            "🥇 `/gold` — Signal BUY/SHORT Or\n"
+            "🔷 `/eth` — Signal BUY/SHORT ETH\n"
+            "📊 `/rsi btc/eth/gold/sp500` — RSI\n"
+            "━━━━━━━━━━━━━━━━━━━━"
+        )
+    else:
+        msg = (
+            f"👋 *Bienvenue {name} !*\n\n"
+            "Je suis ton assistant marché financier.\n\n"
+            "🆓 *PLAN GRATUIT* — Accès limité :\n"
+            "  ✅ Résumé marché quotidien `/actu`\n"
+            "  ❌ Signaux BUY/SHORT Gold & ETH\n"
+            "  ❌ RSI BTC, ETH, Gold, S&P500\n"
+            "  ❌ Top 5 actions du jour\n\n"
+            "👑 *PLAN PREMIUM* — Tout débloquer :\n"
+            f"  💰 *{PRIX_MENSUEL}/mois* ou *{PRIX_ANNUEL}/an*\n"
+            "  ✅ Toutes les analyses illimitées\n"
+            "  ✅ Signaux BUY/SHORT en temps réel\n"
+            "  ✅ RSI sur tous les actifs\n"
+            "  ✅ Résumé auto chaque matin à 8h\n\n"
+            "⬇️ *Utilise le menu ci-dessous :*"
+        )
+    send_message(chat_id, msg, reply_markup=main_menu(chat_id))
 
-def cmd_help(chat_id):
-    send_message(chat_id, "📋 *Que veux-tu analyser ?*", reply_markup=main_menu())
+def cmd_moncompte(chat_id):
+    user = get_user(chat_id)
+    if is_admin(chat_id):
+        msg = "👑 *Ton Compte — ADMIN*\n\nAccès illimité à tout."
+    elif is_premium(chat_id):
+        expiry = user.get("expiry", "Illimité")
+        msg = (
+            f"👑 *Ton Compte — PREMIUM*\n\n"
+            f"Nom : {user.get('name', 'Inconnu')}\n"
+            f"Statut : ✅ Premium actif\n"
+            f"Expiration : {expiry}\n\n"
+            f"Merci pour ton abonnement !"
+        )
+    else:
+        msg = (
+            f"👤 *Ton Compte — GRATUIT*\n\n"
+            f"Nom : {user.get('name', 'Inconnu')}\n"
+            f"Statut : 🆓 Plan gratuit\n\n"
+            f"Passe en *Premium* pour tout débloquer !\n"
+            f"💰 *{PRIX_MENSUEL}/mois* ou *{PRIX_ANNUEL}/an*"
+        )
+    send_message(chat_id, msg, reply_markup={
+        "inline_keyboard": [
+            [{"text": f"💳 Passer Premium — {PRIX_MENSUEL}/mois", "url": PAYMENT_LINK}],
+            [{"text": "🔙 Menu principal", "callback_data": "/start"}]
+        ]
+    } if not is_premium(chat_id) else {
+        "inline_keyboard": [[{"text": "🔙 Menu principal", "callback_data": "/start"}]]
+    })
+
+def cmd_premium_info(chat_id):
+    send_message(chat_id,
+        f"👑 *PASSER EN PREMIUM*\n\n"
+        f"💰 *{PRIX_MENSUEL}/mois* — Résiliable à tout moment\n"
+        f"💰 *{PRIX_ANNUEL}/an* — 2 mois offerts\n\n"
+        f"✅ Signaux BUY/SHORT Gold & ETH\n"
+        f"✅ RSI BTC, ETH, Gold, S&P500\n"
+        f"✅ Top 5 & Flop 3 actions du jour\n"
+        f"✅ Résumé marché automatique à 8h\n"
+        f"✅ Analyses illimitées 24/7\n\n"
+        f"*Comment ça marche ?*\n"
+        f"1️⃣ Clique sur le bouton ci-dessous\n"
+        f"2️⃣ Effectue le paiement\n"
+        f"3️⃣ Envoie la preuve de paiement ici\n"
+        f"4️⃣ Ton accès est activé sous 1h ✅",
+        reply_markup={
+            "inline_keyboard": [
+                [{"text": f"💳 S'abonner maintenant — {PRIX_MENSUEL}/mois", "url": PAYMENT_LINK}],
+                [{"text": "🔙 Retour", "callback_data": "/start"}]
+            ]
+        }
+    )
 
 def cmd_actu(chat_id):
     send_message(chat_id, "⏳ *Récupération des données...*\nAnalyse en cours (~30s) ☕")
@@ -225,28 +371,52 @@ def cmd_actu(chat_id):
     market = get_market_data()
     summary = generate_summary(news, market)
     send_message(chat_id, f"📊 *RÉSUMÉ MARCHÉ — {datetime.now().strftime('%d/%m/%Y %H:%M')}*\n\n{summary}")
-    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu())
+    if not is_premium(chat_id):
+        send_message(chat_id,
+            "🔒 *Veux-tu aller plus loin ?*\n"
+            f"Passe en *Premium* pour les signaux BUY/SHORT, RSI et Top 5 actions !",
+            reply_markup={
+                "inline_keyboard": [
+                    [{"text": f"👑 Passer Premium — {PRIX_MENSUEL}/mois", "url": PAYMENT_LINK}],
+                    [{"text": "🔙 Menu", "callback_data": "/start"}]
+                ]
+            }
+        )
+    else:
+        send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu(chat_id))
 
 def cmd_top(chat_id):
+    if not is_premium(chat_id):
+        premium_lock_msg(chat_id)
+        return
     send_message(chat_id, "⏳ *Chargement du classement...*")
     send_message(chat_id, get_top5())
-    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu())
+    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu(chat_id))
 
 def cmd_gold(chat_id):
+    if not is_premium(chat_id):
+        premium_lock_msg(chat_id)
+        return
     send_message(chat_id, "⏳ *Analyse Or en cours...*")
     news = get_news()
     signal = generate_trade_signal("OR (GOLD)", "GC=F", news)
     send_message(chat_id, f"🥇 *ANALYSE GOLD — {datetime.now().strftime('%d/%m/%Y %H:%M')}*\n\n{signal}")
-    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu())
+    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu(chat_id))
 
 def cmd_eth(chat_id):
+    if not is_premium(chat_id):
+        premium_lock_msg(chat_id)
+        return
     send_message(chat_id, "⏳ *Analyse Ethereum en cours...*")
     news = get_news()
     signal = generate_trade_signal("Ethereum (ETH)", "ETH-USD", news)
     send_message(chat_id, f"🔷 *ANALYSE ETH — {datetime.now().strftime('%d/%m/%Y %H:%M')}*\n\n{signal}")
-    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu())
+    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu(chat_id))
 
 def cmd_rsi(chat_id, asset_key):
+    if not is_premium(chat_id):
+        premium_lock_msg(chat_id)
+        return
     mapping = {
         "btc":   ("BTC-USD", "Bitcoin (BTC)"),
         "eth":   ("ETH-USD", "Ethereum (ETH)"),
@@ -284,7 +454,71 @@ def cmd_rsi(chat_id, asset_key):
     except Exception as e:
         print(e)
         send_message(chat_id, "❌ Erreur lors du calcul du RSI.")
-    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu())
+    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu(chat_id))
+
+# ================== COMMANDES ADMIN ==================
+
+def cmd_admin(chat_id, text):
+    if not is_admin(chat_id):
+        return
+
+    parts = text.strip().split()
+
+    # /addpremium [chat_id] [nom] [jours]
+    # Ex: /addpremium 123456789 Jean 30
+    if parts[0] == "/addpremium" and len(parts) >= 4:
+        target_id = parts[1]
+        name = parts[2]
+        days = int(parts[3])
+        expiry = add_premium(target_id, name, days)
+        send_message(chat_id, f"✅ *Premium activé*\nUser: {name} ({target_id})\nExpiration: {expiry}")
+        send_message(int(target_id),
+            f"🎉 *Ton accès Premium a été activé !*\n\n"
+            f"Expiration : {expiry}\n\n"
+            f"Tape /start pour accéder à toutes les fonctionnalités 👑"
+        )
+
+    # /removepremium [chat_id]
+    elif parts[0] == "/removepremium" and len(parts) >= 2:
+        target_id = parts[1]
+        remove_premium(target_id)
+        send_message(chat_id, f"✅ Premium supprimé pour {target_id}")
+
+    # /listusers
+    elif parts[0] == "/listusers":
+        users = load_users()
+        if not users:
+            send_message(chat_id, "Aucun utilisateur enregistré.")
+            return
+        lines = ["👥 *LISTE DES UTILISATEURS*\n"]
+        for uid, info in users.items():
+            plan = "👑 Premium" if info["plan"] == "premium" else "🆓 Gratuit"
+            expiry = info.get("expiry", "N/A")
+            lines.append(f"{plan} | {info.get('name','?')} | ID: {uid} | Exp: {expiry}")
+        send_message(chat_id, "\n".join(lines))
+
+    # /stats
+    elif parts[0] == "/stats":
+        users = load_users()
+        total = len(users)
+        premium_count = sum(1 for u in users.values() if u["plan"] == "premium")
+        free_count = total - premium_count
+        send_message(chat_id,
+            f"📈 *STATISTIQUES BOT*\n\n"
+            f"👥 Total utilisateurs : {total}\n"
+            f"👑 Premium : {premium_count}\n"
+            f"🆓 Gratuit : {free_count}\n"
+            f"💰 Revenus estimés : {premium_count * float(PRIX_MENSUEL.replace('€','')):.2f}€/mois"
+        )
+
+    else:
+        send_message(chat_id,
+            "🛠️ *COMMANDES ADMIN*\n\n"
+            "`/addpremium [id] [nom] [jours]`\n"
+            "`/removepremium [id]`\n"
+            "`/listusers`\n"
+            "`/stats`"
+        )
 
 # ================== ENVOI AUTO 8H ==================
 
@@ -298,37 +532,69 @@ def check_auto_send():
         auto_sent_today = today
         print("Envoi automatique 8h...")
         try:
-            send_message(TELEGRAM_CHAT_ID, "🌅 *Bonjour ! Voici ton résumé marché du matin.*")
-            news = get_news()
-            market = get_market_data()
-            summary = generate_summary(news, market)
-            send_message(TELEGRAM_CHAT_ID, f"📊 *RÉSUMÉ MARCHÉ — {now.strftime('%d/%m/%Y')}*\n\n{summary}")
-            send_message(TELEGRAM_CHAT_ID, "🔄 *Menu rapide :*", reply_markup=main_menu())
+            users = load_users()
+            # Envoyer à tous les premium + admin
+            targets = [TELEGRAM_CHAT_ID] + [uid for uid, u in users.items() if u["plan"] == "premium"]
+            for target in set(targets):
+                send_message(target, "🌅 *Bonjour ! Voici ton résumé marché du matin.*")
+                news = get_news()
+                market = get_market_data()
+                summary = generate_summary(news, market)
+                send_message(target, f"📊 *RÉSUMÉ MARCHÉ — {now.strftime('%d/%m/%Y')}*\n\n{summary}")
+                send_message(target, "🔄 *Menu rapide :*", reply_markup=main_menu(int(target)))
             print("Envoi auto 8h OK !")
         except Exception as e:
             print(f"Erreur envoi auto : {e}")
 
 # ================== ROUTING ==================
 
-def handle_command(chat_id, text):
-    text = text.strip().lower()
-    if text == "/start":
-        cmd_start(chat_id)
-    elif text == "/help":
-        cmd_help(chat_id)
-    elif text == "/actu":
+def handle_command(chat_id, text, user_name=""):
+    t = text.strip().lower()
+
+    # Commandes admin (case sensitive pour la sécurité)
+    if text.startswith("/addpremium") or text.startswith("/removepremium") or \
+       text.startswith("/listusers") or text.startswith("/stats") or text.startswith("/admin"):
+        cmd_admin(chat_id, text)
+        return
+
+    if t == "/start":
+        cmd_start(chat_id, user_name)
+    elif t == "/help":
+        send_message(chat_id, "📋 *Menu principal :*", reply_markup=main_menu(chat_id))
+    elif t == "/actu":
         cmd_actu(chat_id)
-    elif text == "/top":
+    elif t == "/top":
         cmd_top(chat_id)
-    elif text == "/gold":
+    elif t == "/gold":
         cmd_gold(chat_id)
-    elif text == "/eth":
+    elif t == "/eth":
         cmd_eth(chat_id)
-    elif text.startswith("/rsi"):
-        parts = text.split()
+    elif t.startswith("/rsi"):
+        parts = t.split()
         cmd_rsi(chat_id, parts[1] if len(parts) > 1 else "eth")
+    elif t == "/premium":
+        cmd_premium_info(chat_id)
+    elif t == "/moncompte":
+        cmd_moncompte(chat_id)
     else:
-        send_message(chat_id, "❓ Commande inconnue.", reply_markup=main_menu())
+        # Si l'utilisateur envoie un message libre (ex: preuve de paiement)
+        if not is_premium(chat_id):
+            send_message(chat_id,
+                "💬 *Message reçu !*\n\n"
+                "Si tu as effectué un paiement, l'admin va vérifier et activer ton accès sous 1h.\n"
+                "Merci pour ta patience ! 🙏",
+                reply_markup=main_menu(chat_id)
+            )
+            # Notifier l'admin
+            send_message(TELEGRAM_CHAT_ID,
+                f"📩 *Nouveau message d'un utilisateur*\n\n"
+                f"ID: `{chat_id}`\n"
+                f"Nom: {user_name}\n"
+                f"Message: {text}\n\n"
+                f"Pour activer : `/addpremium {chat_id} {user_name} 30`"
+            )
+        else:
+            send_message(chat_id, "❓ Commande inconnue.", reply_markup=main_menu(chat_id))
 
 # ================== BOUCLE PRINCIPALE ==================
 
@@ -343,9 +609,9 @@ def get_updates(offset=None):
     except:
         return []
 
-print("Bot demarre !")
-print("Commandes : /start | /actu | /top | /gold | /eth | /rsi")
-print("Envoi automatique chaque jour a 8h00")
+print("Bot demarre avec systeme d'abonnement !")
+print("Commandes admin : /addpremium | /removepremium | /listusers | /stats")
+print("Envoi automatique chaque jour a 8h00 (Premium uniquement)")
 
 offset = None
 while True:
@@ -357,15 +623,17 @@ while True:
                 cq = update["callback_query"]
                 answer_callback(cq["id"])
                 chat_id = cq["message"]["chat"]["id"]
-                print(f"Bouton : {cq['data']}")
-                handle_command(chat_id, cq["data"])
+                user_name = cq["message"]["chat"].get("first_name", "")
+                print(f"Bouton : {cq['data']} par {chat_id}")
+                handle_command(chat_id, cq["data"], user_name)
             elif "message" in update:
                 msg = update["message"]
                 text = msg.get("text", "")
                 chat_id = msg["chat"]["id"]
+                user_name = msg["chat"].get("first_name", "")
                 if text:
-                    print(f"Message : {text}")
-                    handle_command(chat_id, text)
+                    print(f"Message : {text} par {chat_id}")
+                    handle_command(chat_id, text, user_name)
         check_auto_send()
         time.sleep(1)
     except Exception as e:

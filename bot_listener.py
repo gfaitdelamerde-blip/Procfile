@@ -221,10 +221,6 @@ def handle_command(chat_id, text):
         asset_name = "Ethereum (ETH)"
 
         if len(parts) > 1:
-            if parts[1] == "gold":
-                ticker = "GC=F"
-                asset_name = "OR (GOLD)"
-            elif parts[1] == "btc":
             if parts[1] == "btc":
                 ticker = "BTC-USD"
                 asset_name = "Bitcoin (BTC)"
@@ -263,48 +259,6 @@ def handle_command(chat_id, text):
             print(e)
             send_to_telegram(chat_id, "Erreur lors du calcul du RSI.")
 
-            elif text.startswith("/rsi"):
-        parts = text.split()
-
-        # Actif par défaut
-        ticker = "ETH-USD"
-        asset_name = "Ethereum (ETH)"
-
-        if len(parts) > 1:
-            if parts[1] == "btc":
-                ticker = "BTC-USD"
-                asset_name = "Bitcoin (BTC)"
-            elif parts[1] == "gold":
-                ticker = "GC=F"
-                asset_name = "OR (GOLD)"
-            elif parts[1] == "sp500":
-                ticker = "^GSPC"
-                asset_name = "S&P 500"
-
-        send_to_telegram(chat_id, f"Calcul RSI en cours pour {asset_name}...")
-
-        rsi_value = compute_rsi(ticker)
-
-        if rsi_value is None:
-            send_to_telegram(chat_id, "Donnees insuffisantes pour calculer le RSI.")
-            return
-
-        if rsi_value < 30:
-            zone = "SURVENTE (zone potentiellement haussiere)"
-        elif rsi_value > 70:
-            zone = "SURACHAT (zone potentiellement baissiere)"
-        else:
-            zone = "NEUTRE"
-
-        message = (
-            f"RSI (14) - {asset_name}\n\n"
-            f"Valeur actuelle : {rsi_value:.2f}\n"
-            f"Zone : {zone}"
-        )
-
-        send_to_telegram(chat_id, message)
-
-        elif text == "/start" or text == "/help":
     elif text == "/start" or text == "/help":
         send_to_telegram(chat_id,
             "Bonjour ! Voici les commandes disponibles :\n\n"

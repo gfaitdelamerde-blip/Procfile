@@ -91,34 +91,25 @@ def answer_callback(callback_query_id):
     requests.post(url, json={"callback_query_id": callback_query_id}, timeout=5)
 
 def main_menu(chat_id):
+    """Menu principal — épuré, 4-5 boutons max"""
     if is_premium(chat_id):
         return {
             "inline_keyboard": [
                 [
-                    {"text": "🏠 Accueil",           "callback_data": "/accueil"}
+                    {"text": "📰 Actu Marché",     "callback_data": "/actu"},
+                    {"text": "🎰 Pépite du jour",  "callback_data": "/chance"}
                 ],
                 [
-                    {"text": "📰 Actu Marché",        "callback_data": "/actu"},
-                    {"text": "🏆 Top 5 Actions",      "callback_data": "/top"}
+                    {"text": "📈 Signaux",         "callback_data": "/menu_signaux"},
+                    {"text": "📊 RSI",             "callback_data": "/menu_rsi"}
                 ],
                 [
-                    {"text": "🥇 Signal Gold",        "callback_data": "/gold"},
-                    {"text": "🔷 Signal ETH",         "callback_data": "/eth"}
+                    {"text": "🏆 Top 5 Actions",  "callback_data": "/top"}
                 ],
                 [
-                    {"text": "📊 RSI BTC",            "callback_data": "/rsi btc"},
-                    {"text": "📊 RSI ETH",            "callback_data": "/rsi eth"}
-                ],
-                [
-                    {"text": "📊 RSI Gold",           "callback_data": "/rsi gold"},
-                    {"text": "📊 RSI S&P500",         "callback_data": "/rsi sp500"}
-                ],
-                [
-                    {"text": "🎰 Pépite du jour",     "callback_data": "/chance"}
-                ],
-                [
-                    {"text": "👤 Mon Compte",         "callback_data": "/moncompte"},
-                    {"text": "❓ Aide",               "callback_data": "/help"}
+                    {"text": "🏠 Accueil",         "callback_data": "/accueil"},
+                    {"text": "👤 Compte",          "callback_data": "/moncompte"},
+                    {"text": "🛎️ SAV",            "callback_data": "/sav"}
                 ]
             ]
         }
@@ -126,35 +117,74 @@ def main_menu(chat_id):
         return {
             "inline_keyboard": [
                 [
-                    {"text": "🏠 Accueil",                              "callback_data": "/accueil"}
+                    {"text": "📰 Actu Marché — Gratuit", "callback_data": "/actu"}
                 ],
                 [
-                    {"text": "📰 Actu Marché (gratuit)",                "callback_data": "/actu"}
+                    {"text": "🔒 Signal Gold",    "callback_data": "/premium"},
+                    {"text": "🔒 Signal ETH",     "callback_data": "/premium"}
                 ],
                 [
-                    {"text": "🔓 Débloquer PREMIUM — " + PRIX_MENSUEL + "/mois", "callback_data": "/premium"}
+                    {"text": "🔒 RSI & Top 5",    "callback_data": "/premium"},
+                    {"text": "🔒 Pépite du jour", "callback_data": "/premium"}
                 ],
                 [
-                    {"text": "👤 Mon Compte",    "callback_data": "/moncompte"},
-                    {"text": "❓ Aide",          "callback_data": "/help"}
+                    {"text": "👑 PASSER PREMIUM — " + PRIX_MENSUEL + "/mois ⚡", "callback_data": "/premium"}
+                ],
+                [
+                    {"text": "🏠 Accueil",        "callback_data": "/accueil"},
+                    {"text": "👤 Compte",         "callback_data": "/moncompte"},
+                    {"text": "🛎️ SAV",           "callback_data": "/sav"}
                 ]
             ]
         }
 
+def menu_signaux():
+    """Sous-menu signaux"""
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "🥇 Signal Gold",   "callback_data": "/gold"},
+                {"text": "🔷 Signal ETH",    "callback_data": "/eth"}
+            ],
+            [
+                {"text": "🔙 Retour",        "callback_data": "/menu_retour"}
+            ]
+        ]
+    }
+
+def menu_rsi():
+    """Sous-menu RSI"""
+    return {
+        "inline_keyboard": [
+            [
+                {"text": "₿ RSI Bitcoin",    "callback_data": "/rsi btc"},
+                {"text": "🔷 RSI Ethereum",  "callback_data": "/rsi eth"}
+            ],
+            [
+                {"text": "🥇 RSI Or",        "callback_data": "/rsi gold"},
+                {"text": "📈 RSI S&P500",    "callback_data": "/rsi sp500"}
+            ],
+            [
+                {"text": "🔙 Retour",        "callback_data": "/menu_retour"}
+            ]
+        ]
+    }
+
+
 def premium_lock_msg(chat_id):
     send_message(chat_id,
-        "🔒 *Fonctionnalité PREMIUM*\n\n"
-        "Cette analyse est réservée aux abonnés Premium.\n\n"
-        f"✅ Accès illimité à toutes les analyses\n"
-        f"✅ Signaux BUY/SHORT Gold & ETH\n"
-        f"✅ RSI en temps réel (BTC, ETH, Gold, S&P500)\n"
-        f"✅ Top 5 actions du jour\n"
-        f"✅ Résumé marché automatique à 8h\n\n"
-        f"💰 *{PRIX_MENSUEL}/mois* ou *{PRIX_ANNUEL}/an*",
+        f"🔒 *Fonctionnalité PREMIUM*\n\n"
+        f"Débloque tout pour *{PRIX_MENSUEL}/mois* :\n\n"
+        f"🥇 Signaux BUY/SHORT Gold & ETH\n"
+        f"📊 RSI BTC, ETH, Or, S&P500\n"
+        f"🏆 Top 5 actions du jour\n"
+        f"🎰 Pépite du jour\n"
+        f"🌅 Résumé auto chaque matin à 8h\n\n"
+        f"⚡ *Activation quasi-instantanée après paiement*",
         reply_markup={
             "inline_keyboard": [
-                [{"text": f"💳 S'abonner — {PRIX_MENSUEL}/mois", "url": PAYMENT_LINK}],
-                [{"text": "🔙 Retour", "callback_data": "/start"}]
+                [{"text": f"👑 Passer Premium — {PRIX_MENSUEL}/mois", "url": PAYMENT_LINK}],
+                [{"text": "🔙 Retour", "callback_data": "/menu_retour"}]
             ]
         }
     )
@@ -413,11 +443,18 @@ def cmd_accueil(chat_id, name=""):
             f"🌅 *ENVOI AUTO À 8H00*\n"
             f"└ Résumé marché chaque matin automatiquement\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"🔄 *Mis à jour plusieurs fois par mois*\n"
+            f"✔️ *Efficacité vérifiée par des pros de la finance*\n"
+            f"🛎️ *SAV disponible 7j/7 — /sav*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
             f"⬇️ *Que veux-tu analyser aujourd'hui ?*"
         )
     else:
         msg = (
-            f"🏠 *BIENVENUE SUR TON ASSISTANT MARCHÉ*\n"
+            f"🏠 *ASSISTANT MARCHÉ FINANCIER*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🔄 *Mis à jour plusieurs fois par mois*\n"
+            f"✔️ *Efficacité vérifiée en continu par des professionnels de la finance*\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n\n"
             f"🆓 *GRATUIT — Disponible maintenant*\n"
             f"✅ *Actu Marché* — Résumé quotidien des marchés\n\n"
@@ -426,15 +463,17 @@ def cmd_accueil(chat_id, name=""):
             f"✅ *Signal Gold & ETH* — BUY ou SHORT + Stop Loss\n"
             f"✅ *Top 5 Actions* — Les meilleures du jour\n"
             f"✅ *RSI* — BTC, ETH, Or, S&P500 en temps réel\n"
-            f"✅ *Pépite du jour* — Petite crypto/action à fort potentiel\n"
+            f"✅ *Pépite du jour* — Crypto/action à fort potentiel\n"
             f"✅ *Résumé auto à 8h* — Chaque matin sans rien faire\n"
             f"✅ *Analyses illimitées* — 24h/24, 7j/7\n\n"
             f"━━━━━━━━━━━━━━━━━━━━\n"
             f"💳 *Paiement sécurisé via PayPal*\n"
-            f"🔓 Accès activé sous *1h* après paiement\n\n"
+            f"⚡ Accès activé *quasi-instantanément* après paiement\n"
+            f"🛎️ *SAV disponible 7j/7 — /sav*\n\n"
             f"⬇️ *Commence gratuitement ou passe Premium :*"
         )
     send_message(chat_id, msg, reply_markup=main_menu(chat_id))
+
 
 
 def cmd_start(chat_id, name=""):
@@ -503,17 +542,22 @@ def cmd_actu(chat_id):
     send_message(chat_id, f"📊 *RÉSUMÉ MARCHÉ — {datetime.now().strftime('%d/%m/%Y %H:%M')}*\n\n{summary}")
     if not is_premium(chat_id):
         send_message(chat_id,
-            "🔒 *Veux-tu aller plus loin ?*\n"
-            f"Passe en *Premium* pour les signaux BUY/SHORT, RSI et Top 5 actions !",
+            f"🔒 *Tu veux aller plus loin ?*\n\n"
+            f"Avec le Premium tu aurais aussi :\n"
+            f"🥇 Signal Gold — BUY ou SHORT maintenant\n"
+            f"🔷 Signal ETH — avec Stop Loss précis\n"
+            f"📊 RSI BTC, ETH, Or, S&P500\n"
+            f"🎰 Pépite du jour — crypto peu connue à fort potentiel\n\n"
+            f"⚡ Activation quasi-instantanée",
             reply_markup={
                 "inline_keyboard": [
                     [{"text": f"👑 Passer Premium — {PRIX_MENSUEL}/mois", "url": PAYMENT_LINK}],
-                    [{"text": "🔙 Menu", "callback_data": "/start"}]
+                    [{"text": "🔙 Menu", "callback_data": "/menu_retour"}]
                 ]
             }
         )
     else:
-        send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu(chat_id))
+        send_message(chat_id, "🔄 *Que veux-tu analyser ensuite ?*", reply_markup=main_menu(chat_id))
 
 def cmd_top(chat_id):
     if not is_premium(chat_id):
@@ -531,7 +575,12 @@ def cmd_gold(chat_id):
     news = get_news()
     signal = generate_trade_signal("OR (GOLD)", "GC=F", news)
     send_message(chat_id, f"🥇 *ANALYSE GOLD — {datetime.now().strftime('%d/%m/%Y %H:%M')}*\n\n{signal}")
-    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu(chat_id))
+    send_message(chat_id, "🔄 *Autre signal ?*", reply_markup={
+        "inline_keyboard": [
+            [{"text": "🔷 Signal ETH",  "callback_data": "/eth"}],
+            [{"text": "🔙 Menu",        "callback_data": "/menu_retour"}]
+        ]
+    })
 
 def cmd_eth(chat_id):
     if not is_premium(chat_id):
@@ -541,7 +590,12 @@ def cmd_eth(chat_id):
     news = get_news()
     signal = generate_trade_signal("Ethereum (ETH)", "ETH-USD", news)
     send_message(chat_id, f"🔷 *ANALYSE ETH — {datetime.now().strftime('%d/%m/%Y %H:%M')}*\n\n{signal}")
-    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu(chat_id))
+    send_message(chat_id, "🔄 *Autre signal ?*", reply_markup={
+        "inline_keyboard": [
+            [{"text": "🥇 Signal Gold", "callback_data": "/gold"}],
+            [{"text": "🔙 Menu",        "callback_data": "/menu_retour"}]
+        ]
+    })
 
 def cmd_rsi(chat_id, asset_key):
     if not is_premium(chat_id):
@@ -584,9 +638,68 @@ def cmd_rsi(chat_id, asset_key):
     except Exception as e:
         print(e)
         send_message(chat_id, "❌ Erreur lors du calcul du RSI.")
-    send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu(chat_id))
+    send_message(chat_id, "🔄 *Autre RSI ?*", reply_markup=menu_rsi())(chat_id, name=""):
+    msg = (
+        f"🛎️ *SERVICE CLIENT — SAV*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n\n"
+        f"Bonjour *{name}* ! Notre équipe est là pour t'aider.\n\n"
+        f"*Pour quel motif nous contacter ?*\n\n"
+        f"🔧 *Problème technique* — Le bot ne répond pas\n"
+        f"💳 *Problème de paiement* — Accès non activé\n"
+        f"💡 *Suggestion* — Une idée d'amélioration\n"
+        f"❓ *Autre* — Toute autre demande\n\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"⬇️ *Choisis un motif ou écris directement ton message :*"
+    )
+    send_message(chat_id, msg, reply_markup={
+        "inline_keyboard": [
+            [{"text": "🔧 Problème technique",    "callback_data": "/sav_tech"}],
+            [{"text": "💳 Problème de paiement",  "callback_data": "/sav_paiement"}],
+            [{"text": "💡 Suggestion",             "callback_data": "/sav_suggestion"}],
+            [{"text": "❓ Autre demande",          "callback_data": "/sav_autre"}],
+            [{"text": "🔙 Retour",                 "callback_data": "/accueil"}]
+        ]
+    })
 
-# ================== COMMANDES ADMIN ==================
+def cmd_sav_motif(chat_id, name, motif):
+    motifs = {
+        "tech":       ("🔧 Problème technique",   "Décris le problème rencontré (commande qui ne marche pas, message d'erreur, etc.)"),
+        "paiement":   ("💳 Problème de paiement", "Indique ta date de paiement et ton email PayPal. Ton accès sera vérifié et activé immédiatement."),
+        "suggestion": ("💡 Suggestion",           "Décris ta suggestion ou l'amélioration que tu souhaites voir dans le bot."),
+        "autre":      ("❓ Autre demande",         "Décris ta demande, nous te répondrons dans les plus brefs délais."),
+    }
+    titre, instruction = motifs.get(motif, ("❓ Demande", "Décris ta demande."))
+    send_message(chat_id,
+        f"{titre}\n\n"
+        f"📝 *{instruction}*\n\n"
+        f"_Écris ton message ci-dessous et l'équipe te répondra directement ici._",
+        reply_markup={
+            "inline_keyboard": [[{"text": "🔙 Retour SAV", "callback_data": "/sav"}]]
+        }
+    )
+    # Mémorise le motif SAV pour ce user
+    users = load_users()
+    if str(chat_id) in users:
+        users[str(chat_id)]["sav_motif"] = titre
+        save_users(users)
+
+def notify_admin_sav(chat_id, name, text):
+    user = get_user(chat_id)
+    motif = user.get("sav_motif", "Non précisé")
+    plan = "👑 Premium" if is_premium(chat_id) else "🆓 Gratuit"
+    send_message(TELEGRAM_CHAT_ID,
+        f"🛎️ *NOUVEAU TICKET SAV*\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"👤 Nom : *{name}*\n"
+        f"🆔 ID : `{chat_id}`\n"
+        f"📦 Plan : {plan}\n"
+        f"📂 Motif : {motif}\n"
+        f"━━━━━━━━━━━━━━━━━━━━\n"
+        f"💬 Message :\n_{text}_\n\n"
+        f"↩️ Pour répondre : `/repondre {chat_id} [ton message]`"
+    )
+
+
 
 def cmd_admin(chat_id, text):
     if not is_admin(chat_id):
@@ -626,6 +739,17 @@ def cmd_admin(chat_id, text):
             expiry = info.get("expiry", "N/A")
             lines.append(f"{plan} | {info.get('name','?')} | ID: {uid} | Exp: {expiry}")
         send_message(chat_id, "\n".join(lines))
+
+    # /repondre [chat_id] [message]
+    elif parts[0] == "/repondre" and len(parts) >= 3:
+        target_id = parts[1]
+        reponse = " ".join(parts[2:])
+        send_message(int(target_id),
+            f"📩 *Réponse du Service Client*\n\n"
+            f"{reponse}\n\n"
+            f"_Si tu as d'autres questions, tape /sav_",
+        )
+        send_message(chat_id, f"✅ Réponse envoyée à {target_id}")
 
     # /stats
     elif parts[0] == "/stats":
@@ -683,7 +807,8 @@ def handle_command(chat_id, text, user_name=""):
 
     # Commandes admin (case sensitive pour la sécurité)
     if text.startswith("/addpremium") or text.startswith("/removepremium") or \
-       text.startswith("/listusers") or text.startswith("/stats") or text.startswith("/admin"):
+       text.startswith("/listusers") or text.startswith("/stats") or \
+       text.startswith("/admin") or text.startswith("/repondre"):
         cmd_admin(chat_id, text)
         return
 
@@ -708,25 +833,49 @@ def handle_command(chat_id, text, user_name=""):
         cmd_moncompte(chat_id)
     elif t == "/chance":
         cmd_chance(chat_id)
+    elif t == "/menu_signaux":
+        send_message(chat_id, "📈 *Signaux de trading — choisis un actif :*", reply_markup=menu_signaux())
+    elif t == "/menu_rsi":
+        send_message(chat_id, "📊 *RSI — choisis un actif :*", reply_markup=menu_rsi())
+    elif t == "/menu_retour":
+        send_message(chat_id, "🔄 *Menu principal :*", reply_markup=main_menu(chat_id))
+    elif t == "/sav":
+        cmd_sav(chat_id, user_name)
+    elif t in ["/sav_tech", "/sav_paiement", "/sav_suggestion", "/sav_autre"]:
+        motif = t.replace("/sav_", "")
+        cmd_sav_motif(chat_id, user_name, motif)
     else:
-        # Si l'utilisateur envoie un message libre (ex: preuve de paiement)
-        if not is_premium(chat_id):
+        # Message libre = ticket SAV ou preuve de paiement
+        user = get_user(chat_id)
+        sav_motif = user.get("sav_motif", "")
+        if sav_motif:
+            # L'utilisateur a choisi un motif SAV → c'est un ticket
+            notify_admin_sav(chat_id, user_name, text)
+            # Réinitialise le motif après envoi
+            users = load_users()
+            if str(chat_id) in users:
+                users[str(chat_id)]["sav_motif"] = ""
+                save_users(users)
             send_message(chat_id,
-                "💬 *Message reçu !*\n\n"
-                "Si tu as effectué un paiement, l'admin va vérifier et activer ton accès sous 1h.\n"
-                "Merci pour ta patience ! 🙏",
+                f"✅ *Ton message a bien été envoyé !*\n\n"
+                f"Notre équipe te répondra directement ici dans les meilleurs délais.\n"
+                f"_Merci pour ta patience_ 🙏",
                 reply_markup=main_menu(chat_id)
             )
-            # Notifier l'admin
-            send_message(TELEGRAM_CHAT_ID,
-                f"📩 *Nouveau message d'un utilisateur*\n\n"
-                f"ID: `{chat_id}`\n"
-                f"Nom: {user_name}\n"
-                f"Message: {text}\n\n"
-                f"Pour activer : `/addpremium {chat_id} {user_name} 30`"
+        elif not is_premium(chat_id):
+            # Preuve de paiement
+            notify_admin_sav(chat_id, user_name, f"[PAIEMENT] {text}")
+            send_message(chat_id,
+                "⚡ *Message reçu !*\n\n"
+                "Ton paiement va être vérifié et ton accès activé *quasi-instantanément*.\n"
+                "Merci ! 🙏",
+                reply_markup=main_menu(chat_id)
             )
         else:
-            send_message(chat_id, "❓ Commande inconnue.", reply_markup=main_menu(chat_id))
+            send_message(chat_id,
+                "❓ Commande inconnue.\n_Tape /sav pour contacter le support._",
+                reply_markup=main_menu(chat_id)
+            )
 
 # ================== BOUCLE PRINCIPALE ==================
 

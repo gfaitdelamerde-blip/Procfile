@@ -95,27 +95,30 @@ def main_menu(chat_id):
         return {
             "inline_keyboard": [
                 [
-                    {"text": "📰 Actu Marché",   "callback_data": "/actu"},
-                    {"text": "🏆 Top 5 Actions", "callback_data": "/top"}
+                    {"text": "🏠 Accueil",           "callback_data": "/accueil"}
                 ],
                 [
-                    {"text": "🥇 Analyse Gold",  "callback_data": "/gold"},
-                    {"text": "🔷 Analyse ETH",   "callback_data": "/eth"}
+                    {"text": "📰 Actu Marché",        "callback_data": "/actu"},
+                    {"text": "🏆 Top 5 Actions",      "callback_data": "/top"}
                 ],
                 [
-                    {"text": "📊 RSI BTC",       "callback_data": "/rsi btc"},
-                    {"text": "📊 RSI ETH",       "callback_data": "/rsi eth"}
+                    {"text": "🥇 Signal Gold",        "callback_data": "/gold"},
+                    {"text": "🔷 Signal ETH",         "callback_data": "/eth"}
                 ],
                 [
-                    {"text": "📊 RSI Gold",      "callback_data": "/rsi gold"},
-                    {"text": "📊 RSI S&P500",    "callback_data": "/rsi sp500"}
+                    {"text": "📊 RSI BTC",            "callback_data": "/rsi btc"},
+                    {"text": "📊 RSI ETH",            "callback_data": "/rsi eth"}
                 ],
                 [
-                    {"text": "👤 Mon Abonnement","callback_data": "/moncompte"},
-                    {"text": "❓ Aide",          "callback_data": "/help"}
+                    {"text": "📊 RSI Gold",           "callback_data": "/rsi gold"},
+                    {"text": "📊 RSI S&P500",         "callback_data": "/rsi sp500"}
                 ],
                 [
-                    {"text": "🎰 Pépite du jour","callback_data": "/chance"}
+                    {"text": "🎰 Pépite du jour",     "callback_data": "/chance"}
+                ],
+                [
+                    {"text": "👤 Mon Compte",         "callback_data": "/moncompte"},
+                    {"text": "❓ Aide",               "callback_data": "/help"}
                 ]
             ]
         }
@@ -123,7 +126,10 @@ def main_menu(chat_id):
         return {
             "inline_keyboard": [
                 [
-                    {"text": "📰 Actu Marché (gratuit)", "callback_data": "/actu"}
+                    {"text": "🏠 Accueil",                              "callback_data": "/accueil"}
+                ],
+                [
+                    {"text": "📰 Actu Marché (gratuit)",                "callback_data": "/actu"}
                 ],
                 [
                     {"text": "🔓 Débloquer PREMIUM — " + PRIX_MENSUEL + "/mois", "callback_data": "/premium"}
@@ -379,41 +385,62 @@ def cmd_chance(chat_id):
     send_message(chat_id, "🔄 *Que veux-tu faire ensuite ?*", reply_markup=main_menu(chat_id))
 
 
-    register_user(chat_id, name)
+def cmd_accueil(chat_id, name=""):
     if is_premium(chat_id):
         msg = (
-            f"👑 *Bienvenue {name} — Compte PREMIUM actif !*\n\n"
-            "Tu as accès à toutes les fonctionnalités.\n"
-            "📅 Résumé automatique chaque matin à *8h00*\n\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            "📌 *TES COMMANDES*\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            "📰 `/actu` — Résumé marché + actualités\n"
-            "🏆 `/top` — Top 5 & Flop 3 actions\n"
-            "🥇 `/gold` — Signal BUY/SHORT Or\n"
-            "🔷 `/eth` — Signal BUY/SHORT ETH\n"
-            "📊 `/rsi btc/eth/gold/sp500` — RSI\n"
-            "🎰 `/chance` — Pépite du jour\n"
-            "━━━━━━━━━━━━━━━━━━━━"
+            f"🏠 *TABLEAU DE BORD — PREMIUM* 👑\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"Bonjour *{name}* ! Voici tout ce que tu peux faire :\n\n"
+            f"📰 *ACTU MARCHÉ*\n"
+            f"└ Résumé complet des marchés financiers\n"
+            f"└ Actualités business FR & EN\n"
+            f"└ Direction de chaque actif + probabilité\n\n"
+            f"🏆 *TOP 5 ACTIONS*\n"
+            f"└ Les 5 actions les plus performantes du jour\n"
+            f"└ Le Flop 3 à éviter absolument\n\n"
+            f"🥇 *SIGNAL GOLD* / 🔷 *SIGNAL ETH*\n"
+            f"└ BUY ou SHORT avec niveau de conviction %\n"
+            f"└ Objectif de prix + Stop Loss précis\n"
+            f"└ Analyse technique & fondamentale\n\n"
+            f"📊 *RSI EN TEMPS RÉEL*\n"
+            f"└ Bitcoin, Ethereum, Or, S&P 500\n"
+            f"└ Barre visuelle survente / surachat\n"
+            f"└ Conseil clair pour chaque actif\n\n"
+            f"🎰 *PÉPITE DU JOUR*\n"
+            f"└ 1 crypto ou action peu connue sélectionnée\n"
+            f"└ Fort potentiel d'explosion court terme\n"
+            f"└ Potentiel %, horizon & niveau de risque\n\n"
+            f"🌅 *ENVOI AUTO À 8H00*\n"
+            f"└ Résumé marché chaque matin automatiquement\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"⬇️ *Que veux-tu analyser aujourd'hui ?*"
         )
     else:
         msg = (
-            f"👋 *Bienvenue {name} !*\n\n"
-            "Je suis ton assistant marché financier.\n\n"
-            "🆓 *PLAN GRATUIT* — Accès limité :\n"
-            "  ✅ Résumé marché quotidien `/actu`\n"
-            "  ❌ Signaux BUY/SHORT Gold & ETH\n"
-            "  ❌ RSI BTC, ETH, Gold, S&P500\n"
-            "  ❌ Top 5 actions du jour\n\n"
-            "👑 *PLAN PREMIUM* — Tout débloquer :\n"
-            f"  💰 *{PRIX_MENSUEL}/mois* ou *{PRIX_ANNUEL}/an*\n"
-            "  ✅ Toutes les analyses illimitées\n"
-            "  ✅ Signaux BUY/SHORT en temps réel\n"
-            "  ✅ RSI sur tous les actifs\n"
-            "  ✅ Résumé auto chaque matin à 8h\n\n"
-            "⬇️ *Utilise le menu ci-dessous :*"
+            f"🏠 *BIENVENUE SUR TON ASSISTANT MARCHÉ*\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"🆓 *GRATUIT — Disponible maintenant*\n"
+            f"✅ *Actu Marché* — Résumé quotidien des marchés\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n\n"
+            f"👑 *PREMIUM — {PRIX_MENSUEL}/mois*\n"
+            f"✅ *Signal Gold & ETH* — BUY ou SHORT + Stop Loss\n"
+            f"✅ *Top 5 Actions* — Les meilleures du jour\n"
+            f"✅ *RSI* — BTC, ETH, Or, S&P500 en temps réel\n"
+            f"✅ *Pépite du jour* — Petite crypto/action à fort potentiel\n"
+            f"✅ *Résumé auto à 8h* — Chaque matin sans rien faire\n"
+            f"✅ *Analyses illimitées* — 24h/24, 7j/7\n\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"💳 *Paiement sécurisé via PayPal*\n"
+            f"🔓 Accès activé sous *1h* après paiement\n\n"
+            f"⬇️ *Commence gratuitement ou passe Premium :*"
         )
     send_message(chat_id, msg, reply_markup=main_menu(chat_id))
+
+
+def cmd_start(chat_id, name=""):
+    register_user(chat_id, name)
+    cmd_accueil(chat_id, name)
+
 
 def cmd_moncompte(chat_id):
     user = get_user(chat_id)
@@ -662,8 +689,8 @@ def handle_command(chat_id, text, user_name=""):
 
     if t == "/start":
         cmd_start(chat_id, user_name)
-    elif t == "/help":
-        send_message(chat_id, "📋 *Menu principal :*", reply_markup=main_menu(chat_id))
+    elif t in ["/help", "/accueil"]:
+        cmd_accueil(chat_id, user_name)
     elif t == "/actu":
         cmd_actu(chat_id)
     elif t == "/top":

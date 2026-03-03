@@ -603,21 +603,6 @@ def cmd_moncompte(chat_id):
                 [{"text": "🔙 Menu", "callback_data": "/menu_retour"}]
             ]
         })
-    elif is_premium(chat_id):
-        expiry = user.get("expiry", "Illimité")
-        msg = (
-            f"👑 *Ton Compte — PREMIUM*\n\n"
-            f"Nom : {user.get('name', 'Inconnu')}\n"
-            f"Statut : ✅ Premium actif\n"
-            f"Expiration : {expiry}\n\n"
-            f"Merci pour ton abonnement !"
-        )
-    else:
-        msg = (
-            f"👤 *Ton Compte — GRATUIT*\n\n"
-            f"Nom : {user.get('name', 'Inconnu')}\n"
-            f"Statut : 🆓 Plan gratuit\n\n"
-            f"Passe en *Premium* pour tout débloquer !\n"
 def cmd_premium_info(chat_id):
     send_message(chat_id,
         f"👑 *PASSER EN PREMIUM — {PRIX_MENSUEL}/mois*\n\n"
@@ -746,7 +731,9 @@ def cmd_rsi(chat_id, asset_key):
     except Exception as e:
         print(e)
         send_message(chat_id, "❌ Erreur lors du calcul du RSI.")
-    send_message(chat_id, "🔄 *Autre RSI ?*", reply_markup=menu_rsi())(chat_id, name=""):
+    send_message(chat_id, "🔄 *Autre RSI ?*", reply_markup=menu_rsi())
+
+def cmd_sav(chat_id, name=""):
     msg = (
         f"🛎️ *SERVICE CLIENT — SAV*\n"
         f"━━━━━━━━━━━━━━━━━━━━\n\n"

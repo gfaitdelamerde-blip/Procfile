@@ -117,7 +117,11 @@ def compute_rsi(ticker, period=14):
     data = yf.download(ticker, period="60d", interval="1d", auto_adjust=True, progress=False)
     if data.empty:
         return None
-    close = data["Close"].dropna()
+    # Fix yfinance multi-index : aplatir les colonnes
+    close = data["Close"]
+    if hasattr(close, "columns"):
+        close = close.iloc[:, 0]
+    close = pd.Series([float(v) for v in close.values.flatten()], index=close.index).dropna()
     if len(close) < period:
         return None
     delta = close.diff()
@@ -125,8 +129,8 @@ def compute_rsi(ticker, period=14):
     avg_loss = (-delta.clip(upper=0)).rolling(window=period).mean()
     rs = avg_gain / avg_loss
     rsi = 100 - (100 / (1 + rs))
-    last_rsi = rsi.iloc[-1]
-    return None if pd.isna(last_rsi) else float(last_rsi)
+    last_rsi = float(rsi.iloc[-1])
+    return None if pd.isna(last_rsi) else last_rsi
 
 # ================== IA ==================
 

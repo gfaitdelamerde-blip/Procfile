@@ -8,6 +8,7 @@ import pandas as pd
 import json
 import random
 import pytz
+import threading
 
 os.environ["PYTHONIOENCODING"] = "utf-8"
 
@@ -1588,59 +1589,72 @@ def generate_ai_trade_decision(news_list, market_str, wallet):
         for h in wallet.get("history", [])[-6:]
     ]) or "  Aucun"
 
-    prompt = f"""Tu es une IA de trading quantitatif autonome. Ta mission : maximiser un portefeuille virtuel de façon disciplinée.
-Heure Paris : {now.strftime('%d/%m/%Y %H:%M')}
+    # Détermine la session
+    session = "matin" if 5 <= now.hour < 12 else "après-midi" if 12 <= now.hour < 18 else "soir/nuit"
+    has_cash = wallet["balance"] > 200
+    has_positions = len(wallet.get("portfolio", {})) > 0
 
-═══ PORTEFEUILLE ═══
-Cash : {wallet['balance']:,.2f}$ | Total : {total_val:,.2f}$
+    prompt = f"""Tu es ARIA, une IA de trading autonome et DÉCISIVE. Tu gères un portefeuille virtuel public de 10 000$.
+Heure Paris : {now.strftime('%d/%m/%Y %H:%M')} — Session : {session}
+Cash disponible : {wallet['balance']:,.2f}$ | Valeur totale : {total_val:,.2f}$
 Winrate : {win_rate:.0f}% sur {wallet['total_trades']} trades
-Positions :
-{portfolio_str or "  Aucune position ouverte"}
 
-═══ HISTORIQUE (6 derniers) ═══
+=== POSITIONS ACTUELLES ===
+{portfolio_str or "AUCUNE POSITION — Tu DOIS ouvrir au moins 1 position si le cash > 200$"}
+
+=== HISTORIQUE RECENT ===
 {hist_str}
 
-═══ INDICATEURS TECHNIQUES (RSI · MACD · SMA · Volume) ═══
+=== ANALYSE TECHNIQUE ===
 {tech_str}
 
-═══ MARCHÉS ═══
+=== PRIX MARCHES ===
 {market_str}
 
-═══ ACTUALITÉS (analyse fondamentale) ═══
-{chr(10).join(news_list[:10])}
+=== ACTUALITES DU JOUR ===
+{chr(10).join(news_list[:12])}
 
-═══ RÈGLES ═══
-1. Max 20% du portefeuille par position
-2. Stop loss dur -8% et take profit +18% (gérés automatiquement)
-3. VENTE ANTICIPÉE si news très négative sur position en bénéfice → emergency_sell=true (protection capital prioritaire)
-4. SHORT autorisé si signal baissier fort (RSI>72 + MACD baissier + news négative confirmée)
-5. COVER (clôturer un short) si le signal baissier s'inverse
-6. Ratio risque/gain min 1:2 SAUF urgence news
-7. Conviction < 60% → HOLD obligatoire
-8. Max 3 décisions par appel
-9. Apprends de tes erreurs passées (historique ci-dessus)
+=== MISSION PRIORITAIRE ===
+{"IMPORTANT: Tu n'as pas de position ouverte et tu as " + f"{wallet['balance']:,.2f}$ de cash. Tu DOIS trader maintenant." if not has_positions and has_cash else "Gere tes positions et cherche de nouvelles opportunites."}
 
-═══ RÉPONSE (JSON strict, rien d'autre) ═══
+=== REGLES DE TRADING ===
+- Max 20% par actif (soit {total_val*0.20:,.0f}$ max par trade)
+- Stop loss auto a -8%, take profit auto a +18%
+- SHORT si RSI > 70 ET MACD baissier ET news negative
+- VENTE URGENTE si news tres negative sur une position en profit (emergency_sell=true)
+- COVER si un short est profitable ET signal inverse
+- Conviction MINIMUM 45% pour trader (pas 60%!)
+- Max 3 decisions par session
+- BIAIS ACTION: Si tu hesites entre HOLD et BUY/SHORT avec conviction 45-60%, PRENDS LE TRADE
+
+=== CONSIGNE SPECIALE ===
+Analyse chaque actif. Trouve les opportunites. Un portefeuille qui ne trade pas est un portefeuille qui ne progresse pas.
+Si RSI < 35 sur un actif = signal d'achat fort.
+Si RSI > 65 sur un actif = surveiller pour short.
+Si MACD haussier + prix au-dessus SMA20 = tendance haussiere = BUY.
+News positives (ETF, adoption, partenariat, résultats) = opportunite BUY.
+News negatives (regulation, fraude, resultats decevants) = SHORT ou SELL urgence.
+
+=== FORMAT REPONSE (JSON pur, rien d'autre) ===
 {{
   "decisions": [
     {{
-      "action": "BUY"|"SELL"|"SHORT"|"COVER"|"HOLD",
+      "action": "BUY" ou "SELL" ou "SHORT" ou "COVER" ou "HOLD",
       "asset_key": "btc",
       "amount_usd": 800,
       "sell_pct": 100,
       "emergency_sell": false,
-      "reason": "Raison courte max 90 chars",
-      "conviction": 75,
-      "technical_basis": "RSI=28 survente + MACD haussier",
-      "fundamental_basis": "Adoption BTC par ETF record"
+      "reason": "Raison concise max 90 chars",
+      "conviction": 72,
+      "technical_basis": "RSI=32 zone survente, MACD croisement haussier",
+      "fundamental_basis": "Afflux ETF Bitcoin record cette semaine"
     }}
   ],
-  "analyse": "Contexte marché actuel en 2 phrases"
-}}
-Si aucune opportunité → decisions: [{{"action":"HOLD","reason":"..."}}]"""
+  "analyse": "Synthese du contexte en 2 phrases"
+}}"""
 
     try:
-        raw = call_groq(prompt, max_tokens=700, temperature=0.25)
+        raw = call_groq(prompt, max_tokens=800, temperature=0.35)
         raw = raw.strip()
         if "```" in raw:
             parts = raw.split("```")
@@ -1775,11 +1789,69 @@ def ai_check_stops(wallet):
             auto_closed.append({"type":"COVER" if is_short else "SELL","asset":pos["name"],"amount":proceeds,"price":price,"qty":pos["qty"],"pnl":pnl,"pnl_pct":pnl_pct,"reason":reason,"conviction":100,"emergency":False,"short":is_short,"tech":"","fund":""})
     return auto_closed
 
-def ai_run_analysis():
-    """Analyse + trade IA — appelée plusieurs fois par jour"""
-    print(f"🤖 Analyse IA {now_paris().strftime('%H:%M')}")
+def ai_breaking_news_check():
+    """Detecte les grosses news toutes les 20 min et trade si necessaire"""
     wallet = load_ai_wallet()
     news = get_news()
+    if not news:
+        return
+
+    # Demande a Groq si une news est assez importante pour trader maintenant
+    news_str = "\n".join(news[:8])
+    portfolio_str = ""
+    for key, pos in wallet.get("portfolio", {}).items():
+        price = get_asset_price(pos["ticker"]) or pos.get("buy_price", 0)
+        is_short = pos.get("type") == "SHORT"
+        pnl_pct = ((pos["buy_price"] - price) if is_short else (price - pos["buy_price"])) / pos["buy_price"] * 100
+        portfolio_str += f"- {pos['name']} ({pos.get('type','LONG')}) P&L={pnl_pct:+.1f}%\n"
+
+    prompt = f"""Tu es ARIA, une IA de trading. Analyse ces actualites et dis si l'une d'elles justifie un trade immediat.
+
+ACTUALITES:
+{news_str}
+
+POSITIONS ACTUELLES:
+{portfolio_str or "Aucune position"}
+Cash disponible: {wallet['balance']:,.2f}$
+
+Une "grosse news" justifiant un trade immediat est:
+- Annonce majeure d'une banque centrale (Fed, BCE)
+- Crash ou pump violent d'un marche (+/-5% en 1 journee)
+- Scandale/faillite d'une entreprise en portefeuille
+- Approbation ou refus ETF crypto
+- Resultats trimestriels tres au-dessus ou en dessous des attentes
+- Evenement geopolitique majeur (guerre, sanctions)
+- Adoption massive par une grande institution
+
+Reponds UNIQUEMENT en JSON:
+{{"breaking": true/false, "urgency": "high/medium/low", "summary": "Resume de la news en 1 phrase", "asset_key": "btc" ou null, "action": "BUY"/"SELL"/"SHORT" ou null, "reason": "Raison courte"}}"""
+
+    try:
+        raw = call_groq(prompt, max_tokens=200, temperature=0.2)
+        raw = raw.strip()
+        start = raw.find("{"); end = raw.rfind("}") + 1
+        if start >= 0 and end > start:
+            raw = raw[start:end]
+        result = json.loads(raw)
+        if result.get("breaking") and result.get("urgency") in ["high", "medium"] and result.get("action") and result.get("asset_key"):
+            print(f"BREAKING NEWS detectee: {result.get('summary','')}")
+            # Lance une analyse complete immediate
+            ai_run_analysis(breaking_news=result.get("summary",""))
+        else:
+            print(f"News check OK — pas d'urgence ({now_paris().strftime('%H:%M')})")
+    except Exception as e:
+        print(f"Erreur breaking news check: {e}")
+
+
+def ai_run_analysis(breaking_news=None):
+    """Analyse + trade IA — sessions fixes + breaking news"""
+    tag = f" [BREAKING: {breaking_news[:50]}]" if breaking_news else ""
+    print(f"IA Analyse {now_paris().strftime('%H:%M')}{tag}")
+    wallet = load_ai_wallet()
+    news = get_news()
+    # Si breaking news, on l'injecte en tête des news
+    if breaking_news:
+        news = [f"BREAKING NEWS URGENTE: {breaking_news}"] + news
     market = get_market_data()
 
     auto_closed = ai_check_stops(wallet)
@@ -1943,17 +2015,25 @@ def check_auto_send():
         except Exception as e:
             print(f"Erreur bilan hebdo: {e}")
 
-    # Trading IA : 9h30 (ouverture EU), 14h30 (ouverture US), 20h (après clôture US/bilan soir)
-    for trigger_h, trigger_m in [(9,30),(14,30),(20,0)]:
-        trigger_key = f"ai_{trigger_h}_{trigger_m}_{today}"
-        if now.hour == trigger_h and now.minute == trigger_m and now.second < 3:
-            flag_key = f"ai_ran_{trigger_h}h{trigger_m}"
-            if not globals().get(flag_key + "_" + today):
-                globals()[flag_key + "_" + today] = True
-                try:
-                    ai_run_analysis()
-                except Exception as e:
-                    print(f"Erreur IA {trigger_h}h{trigger_m}: {e}")
+    # Trading IA : 3 sessions + rattrapage si bot redemarré + breaking news
+    for session_name, h_start, h_end in [("morning",9,11),("afternoon",14,16),("evening",19,21)]:
+        flag = f"ai_session_{session_name}_{today}"
+        if h_start <= now.hour < h_end and not globals().get(flag):
+            globals()[flag] = True
+            print(f"IA session '{session_name}' ({now.strftime('%H:%M')})")
+            try:
+                threading.Thread(target=ai_run_analysis, daemon=True).start()
+            except Exception as e:
+                print(f"Erreur IA session {session_name}: {e}")
+
+    # Breaking news : toutes les 20 min
+    news_flag = f"ai_news_{today}_{now.hour}_{(now.minute//20)*20}"
+    if not globals().get(news_flag) and now.second < 10:
+        globals()[news_flag] = True
+        try:
+            threading.Thread(target=ai_breaking_news_check, daemon=True).start()
+        except Exception as e:
+            print(f"Erreur breaking news: {e}")
 
 
     if now.second < 3 and now.minute % 5 == 0:

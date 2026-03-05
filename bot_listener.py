@@ -1438,9 +1438,10 @@ def cmd_admin(chat_id, text):
 # ================== AI WALLET PUBLIC ==================
 AI_WALLET_FILE = "ai_wallet.json"
 AI_WALLET_INITIAL = 10000.0
-AI_MAX_POSITION_PCT = 0.20   # max 20% du portefeuille par actif
-AI_STOP_LOSS_PCT    = 0.08   # stop loss automatique à -8%
-AI_TAKE_PROFIT_PCT  = 0.18   # take profit à +18%
+AI_MAX_POSITION_PCT = 0.20
+AI_STOP_LOSS_PCT    = 0.08
+AI_TAKE_PROFIT_PCT  = 0.18
+_wallet_lock = threading.Lock()  # Verrou pour eviter les race conditions
 
 AI_TRADABLE = {
     "btc":   ("BTC-USD",  "₿ Bitcoin"),
@@ -1456,32 +1457,47 @@ AI_TRADABLE = {
 }
 
 def load_ai_wallet():
-    if os.path.exists(AI_WALLET_FILE):
-        with open(AI_WALLET_FILE, "r") as f:
-            return json.load(f)
-    # Création initiale
-    wallet = {
-        "balance": AI_WALLET_INITIAL,
-        "portfolio": {},
-        "history": [],
-        "created": now_paris().strftime("%d/%m/%Y"),
-        "last_trade": None,
-        "total_trades": 0,
-        "winning_trades": 0,
-    }
-    save_ai_wallet(wallet)
-    return wallet
+    with _wallet_lock:
+        if os.path.exists(AI_WALLET_FILE):
+            try:
+                with open(AI_WALLET_FILE, "r") as f:
+                    return json.load(f)
+            except:
+                pass
+        wallet = {
+            "balance": AI_WALLET_INITIAL,
+            "portfolio": {},
+            "history": [],
+            "created": now_paris().strftime("%d/%m/%Y"),
+            "last_trade": None,
+            "total_trades": 0,
+            "winning_trades": 0,
+        }
+        save_ai_wallet_unsafe(wallet)
+        return wallet
 
-def save_ai_wallet(wallet):
+def save_ai_wallet_unsafe(wallet):
+    """Sauvegarde sans verrou (appeler depuis un bloc _wallet_lock)"""
     with open(AI_WALLET_FILE, "w") as f:
         json.dump(wallet, f, indent=2)
+
+def save_ai_wallet(wallet):
+    with _wallet_lock:
+        save_ai_wallet_unsafe(wallet)
 
 def ai_wallet_total_value(wallet):
     total = wallet["balance"]
     for key, pos in wallet.get("portfolio", {}).items():
         price = get_asset_price(pos["ticker"]) or pos.get("buy_price", 0)
-        total += pos["qty"] * price
-    return total
+        is_short = pos.get("type") == "SHORT"
+        if is_short:
+            # SHORT: valeur = marge initiale + P&L
+            # P&L short = (buy_price - current) * qty
+            pnl = (pos["buy_price"] - price) * pos["qty"]
+            total += pos["qty"] * pos["buy_price"] + pnl
+        else:
+            total += pos["qty"] * price
+    return max(total, 0)  # ne peut pas être négatif
 
 def ai_wallet_pnl(wallet):
     total = ai_wallet_total_value(wallet)
@@ -1843,64 +1859,84 @@ Reponds UNIQUEMENT en JSON:
         print(f"Erreur breaking news check: {e}")
 
 
+_ai_running = threading.Lock()  # Empêche deux analyses simultanées
+
 def ai_run_analysis(breaking_news=None):
     """Analyse + trade IA — sessions fixes + breaking news"""
-    tag = f" [BREAKING: {breaking_news[:50]}]" if breaking_news else ""
-    print(f"IA Analyse {now_paris().strftime('%H:%M')}{tag}")
-    wallet = load_ai_wallet()
-    news = get_news()
-    # Si breaking news, on l'injecte en tête des news
-    if breaking_news:
-        news = [f"BREAKING NEWS URGENTE: {breaking_news}"] + news
-    market = get_market_data()
-
-    auto_closed = ai_check_stops(wallet)
-    result = generate_ai_trade_decision(news, market, wallet)
-    executed = ai_execute_trades(wallet, result.get("decisions", []))
-    all_trades = auto_closed + executed
-    analyse = result.get("analyse", "")
-
-    now_str = now_paris().strftime("%d/%m/%Y %H:%M")
-    for tr in all_trades:
-        wallet["history"].append({
-            "date": now_str, "type": tr["type"], "asset": tr["asset"],
-            "price": tr["price"], "qty": tr["qty"], "amount": tr["amount"],
-            "pnl": tr.get("pnl",0), "pnl_pct": tr.get("pnl_pct",0),
-            "reason": tr["reason"], "conviction": tr.get("conviction",50),
-            "short": tr.get("short",False), "emergency": tr.get("emergency",False),
-            "tech": tr.get("tech",""), "fund": tr.get("fund",""),
-        })
-    wallet["last_trade"] = now_str
-    save_ai_wallet(wallet)
-
-    if not all_trades:
-        print(f"IA HOLD — {analyse[:60] if analyse else 'RAS'}")
+    if not _ai_running.acquire(blocking=False):
+        print("IA deja en cours, on skip")
         return
+    try:
+        tag = f" [BREAKING: {breaking_news[:50]}]" if breaking_news else ""
+        print(f"IA Analyse {now_paris().strftime('%H:%M')}{tag}")
+        wallet = load_ai_wallet()
+        news = get_news()
+        if breaking_news:
+            news = [f"BREAKING NEWS URGENTE: {breaking_news}"] + news
+        market = get_market_data()
 
-    total_val = ai_wallet_total_value(wallet)
-    pnl, pnl_pct = ai_wallet_pnl(wallet)
-    e = "🟢" if pnl >= 0 else "🔴"
-    icons = {"BUY":"📥","SELL":"📤","SHORT":"🔻","COVER":"🔼"}
-    lines = [f"🤖 *WALLET IA — {now_paris().strftime('%d/%m/%Y %H:%M')}*\n"]
-    if analyse: lines.append(f"📊 _{analyse}_\n")
-    for tr in all_trades:
-        ic = icons.get(tr["type"],"•")
-        short_tag  = " _(short)_"      if tr.get("short")     else ""
-        emerg_tag  = " ⚠️ _urgence_"  if tr.get("emergency") else ""
-        pnl_str    = f" | P&L *{tr.get('pnl_pct',0):+.1f}%*" if tr["type"] in ["SELL","COVER"] else ""
-        lines.append(f"{ic} *{tr['type']} {tr['asset']}*{short_tag} @ {tr['price']:,.2f}${pnl_str}{emerg_tag}")
-        lines.append(f"   💡 _{tr['reason']}_")
-        if tr.get("tech"):  lines.append(f"   📊 _{tr['tech']}_")
-        if tr.get("fund"):  lines.append(f"   📰 _{tr['fund']}_")
-    lines.append(f"\n{e} *Wallet : {total_val:,.2f}$* ({pnl_pct:+.1f}% depuis création)")
-    msg = "\n".join(lines)
+        auto_closed = ai_check_stops(wallet)
+        result = generate_ai_trade_decision(news, market, wallet)
+        executed = ai_execute_trades(wallet, result.get("decisions", []))
+        all_trades = auto_closed + executed
+        analyse = result.get("analyse", "")
 
-    users = load_users()
-    for target in set([TELEGRAM_CHAT_ID] + list(users.keys())):
-        try:
-            send_message(int(target), msg, reply_markup={"inline_keyboard":[[{"text":"📊 Voir le Wallet IA","callback_data":"/aiwallet"}]]})
-        except: pass
-    print(f"✅ IA: {len(all_trades)} trades | {total_val:,.2f}$")
+        now_str = now_paris().strftime("%d/%m/%Y %H:%M")
+        for trade in all_trades:
+            # Cap pnl_pct pour eviter les valeurs aberrantes
+            raw_pnl = trade.get("pnl_pct", 0)
+            capped_pnl = max(-99.9, min(999.0, raw_pnl))
+            wallet["history"].append({
+                "date": now_str, "type": trade["type"], "asset": trade["asset"],
+                "price": trade["price"], "qty": trade["qty"], "amount": trade["amount"],
+                "pnl": trade.get("pnl", 0), "pnl_pct": capped_pnl,
+                "reason": trade["reason"], "conviction": trade.get("conviction", 50),
+                "short": trade.get("short", False), "emergency": trade.get("emergency", False),
+                "tech": trade.get("tech", ""), "fund": trade.get("fund", ""),
+            })
+        wallet["last_trade"] = now_str
+        save_ai_wallet(wallet)
+
+        if not all_trades:
+            print(f"IA HOLD — {analyse[:60] if analyse else 'RAS'}")
+            return
+
+        total_val = ai_wallet_total_value(wallet)
+        pnl_total, pnl_pct = ai_wallet_pnl(wallet)
+        # Cap le P&L total affiche
+        pnl_pct_display = max(-99.9, min(9999.0, pnl_pct))
+        e = "🟢" if pnl_total >= 0 else "🔴"
+        icons = {"BUY": "📥", "SELL": "📤", "SHORT": "🔻", "COVER": "🔼"}
+        lines_msg = [f"🤖 *WALLET IA — " + now_paris().strftime("%d/%m/%Y %H:%M") + "*\n"]
+        if analyse:
+            lines_msg.append("📊 _" + analyse + "_\n")
+        for trade in all_trades:
+            ic = icons.get(trade["type"], "•")
+            short_tag = " _(short)_" if trade.get("short") else ""
+            emerg_tag = " ⚠️ _urgence_" if trade.get("emergency") else ""
+            capped = max(-99.9, min(999.0, trade.get("pnl_pct", 0)))
+            pnl_str = f" | P&L *{capped:+.1f}%*" if trade["type"] in ["SELL", "COVER"] else ""
+            lines_msg.append(f"{ic} *{trade['type']} {trade['asset']}*{short_tag} @ {trade['price']:,.2f}${pnl_str}{emerg_tag}")
+            lines_msg.append(f"   💡 _{trade['reason']}_")
+            if trade.get("tech"):
+                lines_msg.append(f"   📊 _{trade['tech']}_")
+            if trade.get("fund"):
+                lines_msg.append(f"   📰 _{trade['fund']}_")
+        lines_msg.append("\n" + f"{e} *Wallet : {total_val:,.2f}$* ({pnl_pct_display:+.1f}% depuis creation)")
+        msg = "\n".join(lines_msg)
+
+        users = load_users()
+        for target in set([TELEGRAM_CHAT_ID] + list(users.keys())):
+            try:
+                send_message(int(target), msg, reply_markup={"inline_keyboard": [[{"text": "📊 Voir le Wallet IA", "callback_data": "/aiwallet"}]]})
+            except:
+                pass
+        print(f"IA trades: {len(all_trades)} | Wallet: {total_val:,.2f}$")
+    except Exception as e:
+        print(f"Erreur ai_run_analysis: {e}")
+        import traceback; traceback.print_exc()
+    finally:
+        _ai_running.release()
 
 def ai_daily_trade():
     ai_run_analysis()

@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARIA — Dashboard Trading</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Syne:wght@400;600;800&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:       #080c10;
+  --surface:  #0d1117;
+  --border:   #1c2333;
+  --green:    #00e5a0;
+  --red:      #ff4466;
+  --blue:     #4da6ff;
+  --muted:    #3d4f63;
+  --text:     #c9d1d9;
+  --dim:      #6e7f96;
+  --gold:     #f0b429;
+  --glow-g:   rgba(0,229,160,.12);
+  --glow-r:   rgba(255,68,102,.12);
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{background:var(--bg);color:var(--text);font-family:'Space Mono',monospace;font-size:13px;min-height:100vh;overflow-x:hidden}
+
+/* Scanline overlay */
+body::before{content:'';position:fixed;inset:0;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,.06) 2px,rgba(0,0,0,.06) 4px);pointer-events:none;z-index:9999}
+
+/* Grid bg */
+body::after{content:'';position:fixed;inset:0;background-image:linear-gradient(var(--border) 1px,transparent 1px),linear-gradient(90deg,var(--border) 1px,transparent 1px);background-size:40px 40px;opacity:.25;pointer-events:none;z-index:0}
+
+.wrap{position:relative;z-index:1;max-width:1400px;margin:0 auto;padding:24px 20px}
+
+/* ─── HEADER ─── */
+header{display:flex;align-items:center;justify-content:space-between;padding:0 0 28px;border-bottom:1px solid var(--border);margin-bottom:28px;flex-wrap:wrap;gap:16px}
+.logo{display:flex;align-items:center;gap:12px}
+.logo-icon{width:42px;height:42px;background:linear-gradient(135deg,var(--green),var(--blue));border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:20px;box-shadow:0 0 24px var(--glow-g)}
+.logo h1{font-family:'Syne',sans-serif;font-size:22px;font-weight:800;letter-spacing:-.5px}
+.logo span{display:block;font-size:10px;color:var(--dim);letter-spacing:2px;font-family:'Space Mono',monospace;font-weight:400}
+.header-right{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.live-badge{display:flex;align-items:center;gap:6px;background:rgba(0,229,160,.08);border:1px solid rgba(0,229,160,.2);padding:6px 12px;border-radius:6px;font-size:11px;color:var(--green)}
+.live-dot{width:7px;height:7px;background:var(--green);border-radius:50%;animation:pulse 1.6s ease infinite}
+@keyframes pulse{0%,100%{opacity:1;box-shadow:0 0 0 0 rgba(0,229,160,.4)}50%{opacity:.7;box-shadow:0 0 0 6px transparent}}
+.update-time{color:var(--dim);font-size:11px}
+
+/* ─── TOKEN INPUT ─── */
+.token-bar{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:14px 18px;margin-bottom:24px;display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.token-bar label{color:var(--dim);font-size:11px;letter-spacing:1px;white-space:nowrap}
+.token-bar input{flex:1;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:'Space Mono',monospace;font-size:13px;padding:8px 12px;border-radius:6px;outline:none;min-width:200px;transition:border .2s}
+.token-bar input:focus{border-color:var(--blue)}
+.token-bar button{background:var(--blue);color:#000;border:none;padding:8px 18px;border-radius:6px;font-family:'Space Mono',monospace;font-weight:700;font-size:12px;cursor:pointer;white-space:nowrap;transition:opacity .2s}
+.token-bar button:hover{opacity:.85}
+
+/* ─── TABS ─── */
+.tabs{display:flex;gap:4px;margin-bottom:24px;border-bottom:1px solid var(--border);padding-bottom:0}
+.tab{padding:10px 20px;font-size:12px;cursor:pointer;color:var(--dim);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .2s;letter-spacing:.5px}
+.tab.active{color:var(--green);border-bottom-color:var(--green)}
+.tab:hover:not(.active){color:var(--text)}
+.tab-pane{display:none}
+.tab-pane.active{display:block}
+
+/* ─── STAT CARDS ─── */
+.cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;margin-bottom:24px}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px 18px;position:relative;overflow:hidden;transition:border-color .2s}
+.card::before{content:'';position:absolute;top:0;left:0;right:0;height:2px}
+.card.green::before{background:linear-gradient(90deg,transparent,var(--green),transparent)}
+.card.red::before{background:linear-gradient(90deg,transparent,var(--red),transparent)}
+.card.blue::before{background:linear-gradient(90deg,transparent,var(--blue),transparent)}
+.card.gold::before{background:linear-gradient(90deg,transparent,var(--gold),transparent)}
+.card:hover{border-color:var(--muted)}
+.card-label{font-size:10px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px}
+.card-value{font-size:22px;font-family:'Syne',sans-serif;font-weight:800;line-height:1}
+.card-sub{font-size:11px;color:var(--dim);margin-top:4px}
+.pos{color:var(--green)} .neg{color:var(--red)} .neu{color:var(--blue)}
+
+/* ─── CHARTS ─── */
+.charts-row{display:grid;grid-template-columns:2fr 1fr;gap:16px;margin-bottom:24px}
+@media(max-width:900px){.charts-row{grid-template-columns:1fr}}
+.chart-box{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:18px}
+.chart-box h3{font-size:11px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:16px}
+.chart-wrap{position:relative;height:220px}
+
+/* ─── TABLE ─── */
+.section{background:var(--surface);border:1px solid var(--border);border-radius:10px;margin-bottom:20px;overflow:hidden}
+.section-head{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between}
+.section-head h3{font-size:11px;color:var(--dim);letter-spacing:1.5px;text-transform:uppercase}
+.badge{background:var(--border);color:var(--dim);font-size:10px;padding:2px 8px;border-radius:4px}
+table{width:100%;border-collapse:collapse}
+th{font-size:10px;color:var(--dim);letter-spacing:1px;text-align:left;padding:10px 18px;border-bottom:1px solid var(--border)}
+td{padding:11px 18px;border-bottom:1px solid rgba(28,35,51,.5);font-size:12px;vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:rgba(255,255,255,.02)}
+.type-chip{display:inline-flex;align-items:center;padding:2px 8px;border-radius:4px;font-size:10px;font-weight:700;letter-spacing:.5px}
+.type-buy{background:rgba(0,229,160,.12);color:var(--green)}
+.type-sell{background:rgba(255,68,102,.12);color:var(--red)}
+.type-short{background:rgba(77,166,255,.12);color:var(--blue)}
+.type-cover{background:rgba(240,180,41,.12);color:var(--gold)}
+
+/* ─── POSITIONS ─── */
+.positions-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px;padding:16px}
+.pos-card{background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:14px;transition:border-color .2s}
+.pos-card:hover{border-color:var(--muted)}
+.pos-name{font-weight:700;margin-bottom:4px}
+.pos-type{font-size:10px;color:var(--dim);letter-spacing:1px}
+.pos-pnl{font-size:18px;font-family:'Syne',sans-serif;font-weight:800;margin:8px 0 2px}
+.pos-detail{font-size:11px;color:var(--dim)}
+
+/* ─── LEADERBOARD ─── */
+.lb-row{display:flex;align-items:center;padding:12px 18px;border-bottom:1px solid rgba(28,35,51,.5);gap:12px;transition:background .15s}
+.lb-row:hover{background:rgba(255,255,255,.02)}
+.lb-rank{font-size:16px;width:28px;text-align:center;font-family:'Syne',sans-serif;font-weight:800}
+.lb-name{flex:1;font-weight:700}
+.lb-copy{font-size:10px;color:var(--dim)}
+.lb-pnl{font-size:14px;font-family:'Syne',sans-serif;font-weight:800}
+
+/* ─── COPY TOGGLE ─── */
+.copy-banner{background:linear-gradient(135deg,rgba(0,229,160,.06),rgba(77,166,255,.06));border:1px solid rgba(0,229,160,.2);border-radius:10px;padding:16px 20px;margin-bottom:20px;display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap}
+.copy-banner-text h4{font-family:'Syne',sans-serif;font-weight:700;margin-bottom:4px}
+.copy-banner-text p{font-size:11px;color:var(--dim)}
+.toggle{position:relative;width:46px;height:26px;flex-shrink:0}
+.toggle input{opacity:0;width:0;height:0}
+.toggle-slider{position:absolute;cursor:pointer;inset:0;background:var(--border);border-radius:26px;transition:.3s}
+.toggle-slider::before{content:'';position:absolute;height:18px;width:18px;left:4px;bottom:4px;background:var(--dim);border-radius:50%;transition:.3s}
+input:checked+.toggle-slider{background:var(--green)}
+input:checked+.toggle-slider::before{background:#000;transform:translateX(20px)}
+
+/* ─── LOADING ─── */
+.skeleton{background:linear-gradient(90deg,var(--border) 25%,var(--surface) 50%,var(--border) 75%);background-size:200% 100%;animation:shimmer 1.5s infinite;border-radius:4px;height:24px;margin:4px 0}
+@keyframes shimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.loading-overlay{display:flex;flex-direction:column;align-items:center;justify-content:center;padding:40px;gap:12px;color:var(--dim)}
+.spin{width:32px;height:32px;border:2px solid var(--border);border-top-color:var(--green);border-radius:50%;animation:spin .8s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+/* ─── EMPTY STATE ─── */
+.empty{text-align:center;padding:40px 20px;color:var(--dim)}
+.empty-icon{font-size:36px;margin-bottom:12px}
+
+/* ─── RESPONSIVE ─── */
+@media(max-width:600px){
+  .cards{grid-template-columns:1fr 1fr}
+  .card-value{font-size:18px}
+  th,td{padding:8px 12px}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <!-- HEADER -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🤖</div>
+      <div>
+        <h1>ARIA</h1>
+        <span>AI TRADING DASHBOARD</span>
+      </div>
+    </div>
+    <div class="header-right">
+      <div class="live-badge"><span class="live-dot"></span>LIVE</div>
+      <span class="update-time" id="updateTime">Chargement...</span>
+    </div>
+  </header>
+
+  <!-- TOKEN BAR -->
+  <div class="token-bar">
+    <label>MON TOKEN →</label>
+    <input type="text" id="tokenInput" placeholder="Ton token dashboard (depuis /mon_wallet sur Telegram)" maxlength="20">
+    <button onclick="loadUserWallet()">ACCÉDER À MON WALLET</button>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <div class="tab active" onclick="switchTab('aria')">🤖 ARIA (IA)</div>
+    <div class="tab" onclick="switchTab('mywallet')" id="tab-mywallet">💼 MON WALLET</div>
+    <div class="tab" onclick="switchTab('leaderboard')">🏆 CLASSEMENT</div>
+  </div>
+
+  <!-- ═══ TAB: ARIA ═══ -->
+  <div class="tab-pane active" id="pane-aria">
+    <div class="cards" id="aria-cards">
+      <div class="card"><div class="skeleton"></div><div class="skeleton" style="height:32px"></div></div>
+      <div class="card"><div class="skeleton"></div><div class="skeleton" style="height:32px"></div></div>
+      <div class="card"><div class="skeleton"></div><div class="skeleton" style="height:32px"></div></div>
+      <div class="card"><div class="skeleton"></div><div class="skeleton" style="height:32px"></div></div>
+    </div>
+
+    <div class="charts-row">
+      <div class="chart-box">
+        <h3>Performance du wallet IA</h3>
+        <div class="chart-wrap"><canvas id="ariaChart"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <h3>Répartition du portfolio</h3>
+        <div class="chart-wrap"><canvas id="ariaDonut"></canvas></div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h3>Positions ouvertes</h3>
+        <span class="badge" id="pos-count">—</span>
+      </div>
+      <div id="aria-positions" class="positions-grid">
+        <div class="loading-overlay"><div class="spin"></div>Chargement...</div>
+      </div>
+    </div>
+
+    <div class="section">
+      <div class="section-head">
+        <h3>Historique des trades</h3>
+        <span class="badge" id="trade-count">—</span>
+      </div>
+      <div id="aria-history">
+        <div class="loading-overlay"><div class="spin"></div>Chargement...</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ TAB: MY WALLET ═══ -->
+  <div class="tab-pane" id="pane-mywallet">
+    <div id="mywallet-content">
+      <div class="empty">
+        <div class="empty-icon">🔑</div>
+        <p style="margin-bottom:8px">Entre ton token ci-dessus pour accéder à ton wallet</p>
+        <p style="font-size:11px">Obtiens ton token avec <strong>/mon_wallet</strong> sur Telegram</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══ TAB: LEADERBOARD ═══ -->
+  <div class="tab-pane" id="pane-leaderboard">
+    <div class="section">
+      <div class="section-head"><h3>Top traders</h3><span class="badge">LIVE</span></div>
+      <div id="leaderboard-content">
+        <div class="loading-overlay"><div class="spin"></div>Chargement...</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /wrap -->
+
+<script>
+// ── CONFIG ──
+// Change this URL to your Railway URL
+const API = (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
+  ? 'http://localhost:8080'
+  : window.location.origin;
+
+let ariaChart = null, ariaDonut = null, uwChart = null;
+let currentToken = '';
+
+// ── TABS ──
+function switchTab(name) {
+  document.querySelectorAll('.tab').forEach((t,i) => t.classList.toggle('active', ['aria','mywallet','leaderboard'][i]===name));
+  document.querySelectorAll('.tab-pane').forEach(p => p.classList.remove('active'));
+  document.getElementById('pane-'+name).classList.add('active');
+  if (name === 'leaderboard') loadLeaderboard();
+}
+
+// ── UTILS ──
+const fmt$ = v => new Intl.NumberFormat('fr-FR',{minimumFractionDigits:2,maximumFractionDigits:2}).format(v) + '$';
+const fmtPct = v => (v>=0?'+':'')+v.toFixed(2)+'%';
+const pctClass = v => v>=0?'pos':'neg';
+const typeChip = t => `<span class="type-chip type-${t.toLowerCase()}">${t}</span>`;
+const medals = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];
+function timeAgo(str){
+  if(!str) return '—';
+  const parts = str.split(' ');
+  if(parts.length===2){const[d,h]=parts;const[dd,mm,yy]=d.split('/');const dt=new Date(`20${yy}-${mm}-${dd}T${h}`);const mins=Math.floor((Date.now()-dt)/60000);if(mins<60)return mins+'min';if(mins<1440)return Math.floor(mins/60)+'h';return Math.floor(mins/1440)+'j';}
+  return str;
+}
+
+// ── ARIA DATA ──
+async function loadAria() {
+  try {
+    const r = await fetch(`${API}/api/aria`);
+    const d = await r.json();
+    if(d.error){showError('aria-cards',d.error);return;}
+    renderAriaCards(d);
+    renderAriaChart(d.perf_history||[]);
+    renderAriaDonut(d);
+    renderAriaPositions(d.positions||[]);
+    renderAriaHistory(d.history||[]);
+    document.getElementById('updateTime').textContent = 'Mis à jour ' + new Date().toLocaleTimeString('fr-FR');
+  } catch(e) {
+    showError('aria-cards', 'Impossible de joindre le serveur. Vérifiez l\'URL API.');
+  }
+}
+
+function renderAriaCards(d) {
+  const pnlC = pctClass(d.pnl_pct);
+  document.getElementById('aria-cards').innerHTML = `
+    <div class="card ${d.pnl>=0?'green':'red'}">
+      <div class="card-label">Valeur totale</div>
+      <div class="card-value">${fmt$(d.total_value)}</div>
+      <div class="card-sub">Départ : 10 000$</div>
+    </div>
+    <div class="card ${d.pnl>=0?'green':'red'}">
+      <div class="card-label">P&L total</div>
+      <div class="card-value ${pnlC}">${fmtPct(d.pnl_pct)}</div>
+      <div class="card-sub">${d.pnl>=0?'+':''}${fmt$(d.pnl)}</div>
+    </div>
+    <div class="card blue">
+      <div class="card-label">Win Rate</div>
+      <div class="card-value neu">${d.win_rate.toFixed(0)}%</div>
+      <div class="card-sub">${d.winning_trades}/${d.total_trades} trades</div>
+    </div>
+    <div class="card gold">
+      <div class="card-label">Dernier trade</div>
+      <div class="card-value" style="font-size:16px;color:var(--gold)">${timeAgo(d.last_trade)||'—'}</div>
+      <div class="card-sub">Cash : ${fmt$(d.balance)}</div>
+    </div>`;
+}
+
+function renderAriaChart(history) {
+  const ctx = document.getElementById('ariaChart');
+  if(!ctx) return;
+  const labels = history.map(p=>p.d||'');
+  const values = history.map(p=>p.v||10000);
+  if(ariaChart) ariaChart.destroy();
+  const isPos = values.length>0 && values[values.length-1]>=10000;
+  const color = isPos ? '#00e5a0' : '#ff4466';
+  ariaChart = new Chart(ctx, {
+    type:'line',
+    data:{labels,datasets:[{
+      data:values,borderColor:color,backgroundColor:(ctx2=>{
+        const g=ctx2.createLinearGradient(0,0,0,220);
+        g.addColorStop(0,isPos?'rgba(0,229,160,.2)':'rgba(255,68,102,.2)');
+        g.addColorStop(1,'transparent');return g;
+      }),fill:true,tension:.4,pointRadius:0,borderWidth:2
+    }]},
+    options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:d=>' '+fmt$(d.parsed.y)}}},scales:{x:{display:false,grid:{display:false}},y:{grid:{color:'rgba(28,35,51,.8)'},ticks:{color:'#6e7f96',font:{size:10},callback:v=>fmt$(v)}}}}
+  });
+}
+
+function renderAriaDonut(d) {
+  const ctx = document.getElementById('ariaDonut');
+  if(!ctx) return;
+  if(ariaDonut) ariaDonut.destroy();
+  const positions = d.positions||[];
+  const cash = d.balance;
+  const labels = ['Cash',...positions.map(p=>p.name)];
+  const values = [cash,...positions.map(p=>p.value)];
+  const colors = ['#3d4f63','#00e5a0','#4da6ff','#f0b429','#ff4466','#b56cff','#ff9640'];
+  ariaDonut = new Chart(ctx, {
+    type:'doughnut',
+    data:{labels,datasets:[{data:values,backgroundColor:colors.slice(0,labels.length),borderWidth:0,hoverOffset:4}]},
+    options:{responsive:true,maintainAspectRatio:false,cutout:'65%',plugins:{legend:{position:'right',labels:{color:'#6e7f96',font:{size:10},boxWidth:10}},tooltip:{callbacks:{label:d=>' '+fmt$(d.parsed)}}}}
+  });
+}
+
+function renderAriaPositions(positions) {
+  const el = document.getElementById('aria-positions');
+  document.getElementById('pos-count').textContent = positions.length + ' positions';
+  if(!positions.length){
+    el.innerHTML = '<div class="empty"><div class="empty-icon">💤</div><p>Aucune position ouverte</p></div>';
+    return;
+  }
+  el.innerHTML = positions.map(p=>{
+    const isPos = p.pnl_pct>=0;
+    return `<div class="pos-card">
+      <div class="pos-name">${p.name}</div>
+      <div class="pos-type">${p.type} · Entrée ${timeAgo(p.date)}</div>
+      <div class="pos-pnl ${pctClass(p.pnl_pct)}">${fmtPct(p.pnl_pct)}</div>
+      <div class="pos-detail">@ ${fmt$(p.buy_price)} → ${fmt$(p.current_price)}</div>
+      <div class="pos-detail" style="margin-top:2px">Valeur : ${fmt$(p.value)}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderAriaHistory(history) {
+  const el = document.getElementById('aria-history');
+  document.getElementById('trade-count').textContent = history.length + ' trades';
+  if(!history.length){
+    el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div><p>Aucun trade enregistré</p></div>';
+    return;
+  }
+  el.innerHTML = `<table>
+    <thead><tr><th>TYPE</th><th>ACTIF</th><th>PRIX</th><th>MONTANT</th><th>P&L</th><th>RAISON</th><th>DATE</th></tr></thead>
+    <tbody>${history.map(t=>`
+      <tr>
+        <td>${typeChip(t.type)}</td>
+        <td><strong>${t.asset}</strong></td>
+        <td>${fmt$(t.price)}</td>
+        <td>${fmt$(t.amount)}</td>
+        <td class="${t.pnl_pct?pctClass(t.pnl_pct):''}">
+          ${t.pnl_pct?fmtPct(t.pnl_pct):'—'}
+        </td>
+        <td style="max-width:200px;color:var(--dim)">${(t.reason||'').substring(0,60)}</td>
+        <td style="color:var(--dim)">${(t.date||'').substring(0,10)}</td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+// ── USER WALLET ──
+async function loadUserWallet() {
+  const token = document.getElementById('tokenInput').value.trim().toUpperCase();
+  if(!token){alert('Entre ton token d\'abord');return;}
+  currentToken = token;
+  document.getElementById('tab-mywallet').textContent = '💼 MON WALLET';
+  switchTab('mywallet');
+  document.getElementById('mywallet-content').innerHTML = '<div class="loading-overlay"><div class="spin"></div>Chargement de ton wallet...</div>';
+  try {
+    const r = await fetch(`${API}/api/wallet?token=${token}`);
+    const d = await r.json();
+    if(d.error){
+      document.getElementById('mywallet-content').innerHTML = `<div class="empty"><div class="empty-icon">❌</div><p>${d.error}</p><p style="font-size:11px;margin-top:8px">Vérifie ton token avec /mon_wallet sur Telegram</p></div>`;
+      return;
+    }
+    renderUserWallet(d);
+  } catch(e) {
+    document.getElementById('mywallet-content').innerHTML = '<div class="empty"><div class="empty-icon">🔌</div><p>Serveur inaccessible</p></div>';
+  }
+}
+
+function renderUserWallet(d) {
+  const pnlC = pctClass(d.pnl_pct);
+  document.getElementById('tab-mywallet').textContent = `💼 ${d.name||'Mon Wallet'}`;
+  const html = `
+    <div class="copy-banner">
+      <div class="copy-banner-text">
+        <h4>🤖 Copy Trading ARIA</h4>
+        <p>Copie automatiquement chaque trade d'ARIA dans ton wallet</p>
+      </div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:11px;color:var(--dim)">${d.copy_trading?'ACTIVÉ':'DÉSACTIVÉ'}</span>
+        <label class="toggle">
+          <input type="checkbox" ${d.copy_trading?'checked':''} disabled>
+          <span class="toggle-slider"></span>
+        </label>
+        <span style="font-size:10px;color:var(--dim);max-width:140px">Gère via /copytrade sur Telegram</span>
+      </div>
+    </div>
+    <div class="cards">
+      <div class="card ${d.pnl>=0?'green':'red'}">
+        <div class="card-label">Mon wallet</div>
+        <div class="card-value">${fmt$(d.total_value)}</div>
+        <div class="card-sub">Départ : 10 000$</div>
+      </div>
+      <div class="card ${d.pnl>=0?'green':'red'}">
+        <div class="card-label">Mon P&L</div>
+        <div class="card-value ${pnlC}">${fmtPct(d.pnl_pct)}</div>
+        <div class="card-sub">${d.pnl>=0?'+':''}${fmt$(d.pnl)}</div>
+      </div>
+      <div class="card blue">
+        <div class="card-label">Win Rate</div>
+        <div class="card-value neu">${d.win_rate.toFixed(0)}%</div>
+        <div class="card-sub">${d.total_trades} trades</div>
+      </div>
+      <div class="card">
+        <div class="card-label">Cash dispo</div>
+        <div class="card-value" style="color:var(--text)">${fmt$(d.balance)}</div>
+        <div class="card-sub">Disponible</div>
+      </div>
+    </div>
+    <div class="charts-row">
+      <div class="chart-box">
+        <h3>Évolution de mon wallet</h3>
+        <div class="chart-wrap"><canvas id="uwChart"></canvas></div>
+      </div>
+      <div class="chart-box">
+        <h3>Mes positions</h3>
+        <div id="uw-positions-mini">
+          ${(d.positions||[]).length===0
+            ? '<div class="empty"><div class="empty-icon">💤</div><p>Aucune position</p></div>'
+            : (d.positions||[]).map(p=>`
+              <div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+                <div>
+                  <div style="font-weight:700;font-size:12px">${p.name}</div>
+                  <div style="font-size:10px;color:var(--dim)">${p.type} @ ${fmt$(p.buy_price)}</div>
+                </div>
+                <div class="${pctClass(p.pnl_pct)}" style="font-family:'Syne',sans-serif;font-weight:800">${fmtPct(p.pnl_pct)}</div>
+              </div>`).join('')}
+        </div>
+      </div>
+    </div>
+    <div class="section">
+      <div class="section-head"><h3>Mon historique</h3><span class="badge">${(d.history||[]).length} trades</span></div>
+      ${(d.history||[]).length===0
+        ? '<div class="empty"><div class="empty-icon">📭</div><p>Aucun trade</p></div>'
+        : `<table>
+          <thead><tr><th>TYPE</th><th>ACTIF</th><th>PRIX</th><th>MONTANT</th><th>P&L</th><th>DATE</th></tr></thead>
+          <tbody>${(d.history||[]).map(t=>`
+            <tr>
+              <td>${typeChip(t.type)}</td>
+              <td><strong>${t.asset}</strong></td>
+              <td>${fmt$(t.price)}</td>
+              <td>${fmt$(t.amount)}</td>
+              <td class="${t.pnl_pct?pctClass(t.pnl_pct):''}">
+                ${t.pnl_pct?fmtPct(t.pnl_pct):'—'}
+              </td>
+              <td style="color:var(--dim)">${(t.date||'').substring(0,10)}</td>
+            </tr>`).join('')}
+          </tbody></table>`}
+    </div>`;
+  document.getElementById('mywallet-content').innerHTML = html;
+  // Draw user wallet chart
+  setTimeout(()=>{
+    const ctx = document.getElementById('uwChart');
+    if(!ctx) return;
+    if(uwChart) uwChart.destroy();
+    const ph = d.perf_history||[];
+    const vals = ph.map(p=>p.v||10000);
+    const isPos = vals.length>0 && vals[vals.length-1]>=10000;
+    const color = isPos?'#00e5a0':'#ff4466';
+    uwChart = new Chart(ctx,{
+      type:'line',
+      data:{labels:ph.map(p=>p.d),datasets:[{data:vals,borderColor:color,backgroundColor:(c2=>{const g=c2.createLinearGradient(0,0,0,220);g.addColorStop(0,isPos?'rgba(0,229,160,.2)':'rgba(255,68,102,.2)');g.addColorStop(1,'transparent');return g;}),fill:true,tension:.4,pointRadius:0,borderWidth:2}]},
+      options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:false},tooltip:{callbacks:{label:d=>' '+fmt$(d.parsed.y)}}},scales:{x:{display:false},y:{grid:{color:'rgba(28,35,51,.8)'},ticks:{color:'#6e7f96',font:{size:10},callback:v=>fmt$(v)}}}}
+    });
+  },100);
+}
+
+// ── LEADERBOARD ──
+async function loadLeaderboard() {
+  try {
+    const r = await fetch(`${API}/api/leaderboard`);
+    const d = await r.json();
+    if(!d.length){
+      document.getElementById('leaderboard-content').innerHTML = '<div class="empty"><div class="empty-icon">🏆</div><p>Pas encore de traders</p></div>';
+      return;
+    }
+    document.getElementById('leaderboard-content').innerHTML = d.map((u,i)=>`
+      <div class="lb-row">
+        <div class="lb-rank">${medals[i]||i+1}</div>
+        <div>
+          <div class="lb-name">${u.name}</div>
+          <div class="lb-copy">${u.copy_trading?'🤖 Copy ARIA activé':''}</div>
+        </div>
+        <div>
+          <div class="lb-pnl ${pctClass(u.pnl_pct)}">${fmtPct(u.pnl_pct)}</div>
+          <div style="font-size:10px;color:var(--dim);text-align:right">${fmt$(u.total_value)}</div>
+        </div>
+      </div>`).join('');
+  } catch(e){
+    document.getElementById('leaderboard-content').innerHTML = '<div class="empty"><div class="empty-icon">🔌</div><p>Serveur inaccessible</p></div>';
+  }
+}
+
+function showError(elId, msg) {
+  const el = document.getElementById(elId);
+  if(el) el.innerHTML = `<div class="empty"><div class="empty-icon">⚠️</div><p>${msg}</p></div>`;
+}
+
+// ── AUTO REFRESH ──
+loadAria();
+setInterval(loadAria, 30000); // refresh every 30s
+
+// Auto-load token from URL param
+const urlToken = new URLSearchParams(window.location.search).get('token');
+if(urlToken){
+  document.getElementById('tokenInput').value = urlToken;
+  loadUserWallet();
+}
+</script>
+</body>
+</html>

@@ -653,7 +653,9 @@ def _do_refresh_cache():
                       "^GSPC":"📈 S&P 500","^DJI":"📊 Dow Jones","^IXIC":"💻 Nasdaq",
                       "AAPL":"🍎 Apple","MSFT":"🔵 Microsoft","NVDA":"🟢 Nvidia",
                       "TSLA":"🚗 Tesla","AMZN":"📦 Amazon"}
-            data = yf.download(TICKERS, period="2d", interval="1d", progress=False)["Close"]
+            data_raw = _yf_safe(TICKERS, period="2d")
+            data = data_raw["Close"] if data_raw is not None and not data_raw.empty else None
+            if data is None: raise Exception("yf cache timeout")
             latest = data.iloc[-1]; chg = data.pct_change().iloc[-1] * 100
             lines = []; prices = {}
             for tk in TICKERS:
@@ -739,17 +741,22 @@ def get_asset_price(ticker):
     # 1. Prix dans le cache (mis à jour toutes les 5 min)
     if ticker in _price_cache:
         return _price_cache[ticker]
-    # 2. Fallback: yf.fast_info (beaucoup plus rapide que yf.download)
+    # 2. Fallback: yf.fast_info avec timeout
     try:
-        info = yf.Ticker(ticker).fast_info
-        price = getattr(info, 'last_price', None) or getattr(info, 'regularMarketPrice', None)
+        def _get_fast():
+            info = yf.Ticker(ticker).fast_info
+            return getattr(info, 'last_price', None) or getattr(info, 'regularMarketPrice', None)
+        future = _yf_executor.submit(_get_fast)
+        price = future.result(timeout=5)
         if price:
             _price_cache[ticker] = float(price)
             return float(price)
     except: pass
     # 3. Fallback final: yf.download
     try:
-        data = yf.download(ticker, period="2d", interval="1d", progress=False)["Close"]
+        data_raw = _yf_safe(ticker, period="2d")
+        if data_raw is None or data_raw.empty: return None
+        data = data_raw["Close"]
         vals = [float(v) for v in data.values.flatten() if str(v) != 'nan']
         if vals:
             _price_cache[ticker] = vals[-1]
@@ -757,9 +764,33 @@ def get_asset_price(ticker):
     except: pass
     return None
 
+# ============================================================
+# yfinance SAFE WRAPPER — timeout strict 8s
+# yf.download peut geler indéfiniment sur Railway sans ce wrapper
+# ============================================================
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+_yf_executor = ThreadPoolExecutor(max_workers=4)
+
+def _yf_safe(ticker, period="2d", interval="1d", auto_adjust=False, extra_cols=False):
+    """yf.download avec timeout strict 8s — jamais bloquant"""
+    def _dl():
+        return yf.download(ticker, period=period, interval=interval,
+                           auto_adjust=auto_adjust, progress=False)
+    try:
+        future = _yf_executor.submit(_dl)
+        return future.result(timeout=8)
+    except FuturesTimeout:
+        print(f"⚠️ yf timeout: {ticker} ({period}) — skip")
+        return None
+    except Exception as e:
+        print(f"⚠️ yf error: {ticker}: {e}")
+        return None
+
 def get_asset_data(ticker, period="5d"):
-    data = yf.download(ticker, period=period, interval="1d", progress=False)["Close"]
-    return [float(v) for v in data.dropna().values.flatten() if str(v) != 'nan']
+    data = _yf_safe(ticker, period=period)
+    if data is None or data.empty: return []
+    close = data["Close"]
+    return [float(v) for v in close.dropna().values.flatten() if str(v) != 'nan']
 
 # Cache RSI par ticker (valable 30 min)
 _rsi_cache = {}  # {ticker: (value, timestamp)}
@@ -773,7 +804,7 @@ def compute_rsi(ticker, period=14):
         if _t.time() - cached_ts < _RSI_TTL:
             return cached_val
     try:
-        data = yf.download(ticker, period="60d", interval="1d", auto_adjust=True, progress=False)
+        data = _yf_safe(ticker, period="60d", auto_adjust=True)
         if data.empty:
             return None
         close = data["Close"]
@@ -798,7 +829,9 @@ def compute_rsi(ticker, period=14):
 
 def get_top5():
     tickers = ["AAPL","MSFT","NVDA","TSLA","AMZN","GOOGL","META","AMD","NFLX","ORCL"]
-    data = yf.download(tickers, period="2d", interval="1d", progress=False)["Close"]
+    data_raw = _yf_safe(tickers, period="2d")
+    if data_raw is None or data_raw.empty: return "Données top5 indisponibles"
+    data = data_raw["Close"]
     chg = data.pct_change().iloc[-1] * 100
     latest = data.iloc[-1]
     sorted_t = chg.dropna().sort_values(ascending=False)
@@ -1033,7 +1066,9 @@ def check_strong_moves():
     now_str = now_paris().strftime("%Y-%m-%d")
     tickers = list(MOVE_WATCH.keys())
     try:
-        data = yf.download(tickers, period="2d", interval="1d", progress=False)["Close"]
+        data_raw = _yf_safe(tickers, period="2d")
+        if data_raw is None or data_raw.empty: return
+        data = data_raw["Close"]
         if data.empty: return
         chg = data.pct_change().iloc[-1] * 100
         current = data.iloc[-1]
@@ -1197,7 +1232,9 @@ Max 1200 chars."""
 def generate_market_score():
     """Score global du marché de 0 à 100"""
     try:
-        data = yf.download(["BTC-USD","^GSPC","^IXIC","GC=F"], period="5d", interval="1d", progress=False)["Close"]
+        data_raw = _yf_safe(["BTC-USD","^GSPC","^IXIC","GC=F"], period="5d")
+        if data_raw is None or data_raw.empty: return "Score indisponible"
+        data = data_raw["Close"]
         chg = data.pct_change().iloc[-1] * 100
         scores = []
         for tk in ["BTC-USD","^GSPC","^IXIC","GC=F"]:
@@ -1245,7 +1282,9 @@ def generate_hidden_gem(news_list):
     }
     tickers = list(candidates.keys())
     try:
-        data = yf.download(tickers, period="30d", interval="1d", progress=False)["Close"]
+        data_raw = _yf_safe(tickers, period="30d")
+        if data_raw is None or data_raw.empty: return "Rapport indisponible"
+        data = data_raw["Close"]
         chg7 = data.pct_change(periods=7).iloc[-1] * 100
         chg30 = data.pct_change(periods=30).iloc[-1] * 100
         latest = data.iloc[-1]
@@ -1803,7 +1842,9 @@ def cmd_performance(chat_id):
     else:
         start = now_paris() - timedelta(days=30)
     try:
-        data = yf.download(["BTC-USD","^GSPC","NVDA"], period="30d", interval="1d", progress=False)["Close"]
+        data_raw = _yf_safe(["BTC-USD","^GSPC","NVDA"], period="30d")
+        if data_raw is None or data_raw.empty: return
+        data = data_raw["Close"]
         chg = {}
         for tk in ["BTC-USD","^GSPC","NVDA"]:
             vals = data[tk].dropna().values
@@ -2112,7 +2153,7 @@ def ai_wallet_pnl(wallet):
 def ai_get_technicals(ticker):
     """RSI, MACD, SMA20/50, volume, volatilité, support/résistance"""
     try:
-        data = yf.download(ticker, period="60d", interval="1d", auto_adjust=True, progress=False)
+        data = _yf_safe(ticker, period="60d", auto_adjust=True)
         if data.empty or len(data) < 20:
             return {}
         close = data["Close"]

@@ -609,53 +609,69 @@ def menu_paper(chat_id):
     ]}
 
 # ================== DONNÉES MARCHÉ ==================
-# Cache des news pour "En savoir plus"
-_news_cache = {}  # {index: {title, description, url}}
+# Cache global pour eviter les doubles appels API
+_news_cache = {}          # {index: {title, description, url}}
+_news_list_cache = []     # liste strings pour les prompts
+_market_cache = ""        # string marché formatée
+_cache_ts = 0             # timestamp dernière mise à jour (seconds)
+_CACHE_TTL = 300          # 5 minutes
+
+def _refresh_cache_if_needed():
+    """Rafraichit news+market en un seul appel si le cache est trop vieux"""
+    global _news_list_cache, _market_cache, _cache_ts
+    import time as _time
+    if _time.time() - _cache_ts < _CACHE_TTL and _news_list_cache and _market_cache:
+        return
+    try:
+        # News
+        articles = []
+        url_api = "https://newsapi.org/v2/top-headlines"
+        for params in [
+            {"apiKey": NEWSAPI_KEY, "pageSize": 10, "category": "business", "language": "en"},
+            {"apiKey": NEWSAPI_KEY, "pageSize": 8, "category": "general", "language": "fr", "country": "fr"},
+        ]:
+            try:
+                r = requests.get(url_api, params=params, timeout=8)
+                if r.status_code == 200:
+                    articles.extend(r.json().get("articles", []))
+            except: pass
+        valid = [a for a in articles[:12] if a.get("title") and a.get("description")]
+        global _news_cache
+        _news_cache = {str(i): {"title": a["title"], "description": a.get("description",""), "url": a.get("url","")} for i, a in enumerate(valid)}
+        _news_list_cache = [f"- {a['title']} : {a.get('description','')[:150]}..." for a in valid]
+        # Marché
+        try:
+            data = yf.download(TICKERS, period="2d", interval="1d", progress=False, timeout=10)["Close"]
+            latest = data.iloc[-1]
+            chg = data.pct_change().iloc[-1] * 100
+            mapping = {"BTC-USD":"₿ Bitcoin","ETH-USD":"🔷 Ethereum","GC=F":"🥇 Or","^GSPC":"📈 S&P 500","^DJI":"📊 Dow Jones","^IXIC":"💻 Nasdaq","AAPL":"🍎 Apple","MSFT":"🔵 Microsoft","NVDA":"🟢 Nvidia","TSLA":"🚗 Tesla","AMZN":"📦 Amazon"}
+            lines = []
+            for tk in TICKERS:
+                try:
+                    c = float(chg[tk]); p = float(latest[tk])
+                    e = "🟢" if c >= 0 else "🔴"
+                    lines.append(f"{e} *{mapping.get(tk,tk)}*: {p:,.2f} ({c:+.2f}%)")
+                except: pass
+            _market_cache = "\n".join(lines)
+        except Exception as e:
+            print(f"Cache marché: {e}")
+        _cache_ts = _time.time()
+        print(f"Cache rafraichi: {len(_news_list_cache)} news, {len(_market_cache)} chars marché")
+    except Exception as e:
+        print(f"Erreur refresh cache: {e}")
 
 def get_news():
-    global _news_cache
-    articles = []
-    url = "https://newsapi.org/v2/top-headlines"
-    for params in [
-        {"apiKey": NEWSAPI_KEY, "pageSize": 10, "category": "business", "language": "en"},
-        {"apiKey": NEWSAPI_KEY, "pageSize": 10, "category": "general", "language": "fr", "country": "fr"},
-    ]:
-        try:
-            r = requests.get(url, params=params, timeout=10)
-            if r.status_code == 200:
-                articles.extend(r.json().get("articles", []))
-        except:
-            pass
-    valid = [a for a in articles[:12] if a.get("title") and a.get("description")]
-    # Rafraichit le cache
-    _news_cache = {str(i): {"title": a["title"], "description": a.get("description",""), "url": a.get("url","")} for i, a in enumerate(valid)}
-    return [f"- {a['title']} : {a.get('description','')[:150]}..." for a in valid]
+    _refresh_cache_if_needed()
+    return _news_list_cache or ["Pas d'actualites disponibles"]
 
 def get_news_with_buttons():
-    """Retourne les news avec boutons En savoir plus pour chaque article"""
-    global _news_cache
-    articles = []
-    url_api = "https://newsapi.org/v2/top-headlines"
-    for params in [
-        {"apiKey": NEWSAPI_KEY, "pageSize": 8, "category": "business", "language": "en"},
-        {"apiKey": NEWSAPI_KEY, "pageSize": 6, "category": "general", "language": "fr", "country": "fr"},
-    ]:
-        try:
-            r = requests.get(url_api, params=params, timeout=10)
-            if r.status_code == 200:
-                articles.extend(r.json().get("articles", []))
-        except:
-            pass
-    valid = [a for a in articles[:10] if a.get("title") and a.get("description")]
-    _news_cache = {str(i): {"title": a["title"], "description": a.get("description",""), "url": a.get("url","")} for i, a in enumerate(valid)}
-    lines = []
+    """Retourne les news avec boutons En savoir plus — utilise le cache"""
+    _refresh_cache_if_needed()
     keyboard = []
-    for i, a in enumerate(valid[:8]):
-        title = a["title"][:80]
-        desc  = a.get("description","")[:100]
-        lines.append(f"📰 *{title}*\n_{desc}_")
-        keyboard.append([{"text": f"🔍 En savoir plus — {title[:35]}...", "callback_data": f"/news_deep {i}"}])
-    return "\n\n".join(lines), keyboard
+    for i, art in _news_cache.items():
+        title = art["title"][:80]
+        keyboard.append([{"text": f"🔍 {title[:40]}...", "callback_data": f"/news_deep {i}"}])
+    return "", keyboard  # le texte du résumé est géré séparément
 
 def cmd_news_deep(chat_id, idx_str):
     """Analyse approfondie d'une news avec Groq"""
@@ -689,22 +705,8 @@ Format téléphone, utilise des emojis, max 400 mots."""
         send_message(chat_id, "Erreur lors de l'analyse. Réessaie.")
 
 def get_market_data():
-    data = yf.download(TICKERS, period="2d", interval="1d", progress=False)["Close"]
-    latest = data.iloc[-1]
-    chg = data.pct_change().iloc[-1] * 100
-    mapping = {
-        "BTC-USD":"₿ Bitcoin","ETH-USD":"🔷 Ethereum","GC=F":"🥇 Or",
-        "^GSPC":"📈 S&P 500","^DJI":"📊 Dow Jones","^IXIC":"💻 Nasdaq",
-        "AAPL":"🍎 Apple","MSFT":"🔵 Microsoft","NVDA":"🟢 Nvidia",
-        "TSLA":"🚗 Tesla","AMZN":"📦 Amazon",
-    }
-    lines = []
-    for tk in TICKERS:
-        name = mapping.get(tk, tk)
-        c = float(chg[tk])
-        e = "🟢" if c >= 0 else "🔴"
-        lines.append(f"{e} *{name}*: {float(latest[tk]):,.2f} ({c:+.2f}%)")
-    return "\n".join(lines)
+    _refresh_cache_if_needed()
+    return _market_cache or "Données marché indisponibles"
 
 def get_asset_price(ticker):
     try:
@@ -753,7 +755,7 @@ def get_top5():
 
 # ================== IA ==================
 def call_groq(prompt, max_tokens=1100, temperature=0.4):
-    client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1")
+    client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1", timeout=25.0)
     r = client.chat.completions.create(
         model=GROQ_MODEL,
         messages=[{"role": "user", "content": prompt}],
@@ -2511,26 +2513,27 @@ def check_auto_send():
     week = now.strftime('%Y-%W')
 
     # Briefing quotidien à 8h
-    if now.hour == 8 and now.minute == 0 and auto_sent_today != today:
+    if now.hour == 8 and now.minute < 30 and auto_sent_today != today:
         auto_sent_today = today
-        print("Envoi auto 8h...")
-        try:
-            users = load_users()
-            targets = [TELEGRAM_CHAT_ID] + [uid for uid, u in users.items() if u.get("plan") == "premium"]
-            news = get_news(); market = get_market_data(); quote = get_daily_quote()
-            summary = generate_summary(news, market)
-            for target in set(targets):
-                tid = int(target)
-                ud = users.get(str(target), {}); uname = ud.get("name", "")
-                lang = ud.get("lang", "fr")
-                sal = LANGS[lang]["morning"][0]
-                send_message(tid, f"{sal} *{uname}* 👋\n\n💬 _{quote}_\n\n━━━━━━━━━━━━━━━━━━━━\nTon briefing du matin 👇")
-                send_message(tid, f"📊 *RÉSUMÉ MARCHÉ — {now.strftime('%d/%m/%Y')}*\n\n{summary}")
-                send_message(tid, "⬇️", reply_markup=main_menu(tid))
-        except Exception as e:
-            print(f"Erreur 8h: {e}")
-
-    # Bilan hebdomadaire le dimanche à 19h
+        def _send_briefing():
+            try:
+                users = load_users()
+                targets = [TELEGRAM_CHAT_ID] + [uid for uid, u in users.items() if u.get("plan") == "premium"]
+                news = get_news(); market = get_market_data(); quote = get_daily_quote()
+                summary = generate_summary(news, market)
+                for target in set(targets):
+                    try:
+                        tid = int(target)
+                        ud = users.get(str(target), {}); uname = ud.get("name", "")
+                        lang = ud.get("lang", "fr")
+                        sal = LANGS[lang]["morning"][0]
+                        send_message(tid, f"{sal} *{uname}* 👋\n\n💬 _{quote}_\n\n━━━━━━━━━━━━━━━━━━━━\nTon briefing du matin 👇")
+                        send_message(tid, f"📊 *RÉSUMÉ MARCHÉ — {now_paris().strftime('%d/%m/%Y')}*\n\n{summary}")
+                        send_message(tid, "⬇️", reply_markup=main_menu(tid))
+                    except Exception as eu: print(f"Erreur briefing {target}: {eu}")
+            except Exception as e: print(f"Erreur 8h: {e}")
+        threading.Thread(target=_send_briefing, daemon=True).start()
+        print("Briefing 8h lancé en thread")
     if now.weekday() == 6 and now.hour == 19 and now.minute == 0 and weekly_sent_this_week != week:
         weekly_sent_this_week = week
         print("Envoi bilan hebdo dimanche...")
@@ -2568,12 +2571,14 @@ def check_auto_send():
             print(f"Erreur breaking news: {e}")
 
 
-    # Alertes prix (toutes les 5 min)
+    # Alertes prix + pre-chauffe cache (toutes les 5 min)
     if now.second < 3 and now.minute % 5 == 0:
         try:
             check_alerts()
         except Exception as e:
             print(f"Erreur alertes: {e}")
+        # Pre-chauffe le cache en arrière-plan
+        threading.Thread(target=_refresh_cache_if_needed, daemon=True).start()
 
     # Mouvements forts >5% (toutes les 30 min)
     if now.second < 5 and now.minute % 30 == 0:
@@ -2627,10 +2632,10 @@ def handle_command(chat_id, text, user_name=""):
             apply_referral(chat_id, ref_code, user_name)
         cmd_start(chat_id, user_name)
     elif t_low in ["/help","/accueil"]:      cmd_accueil(chat_id, user_name)
-    elif t_low == "/actu":                   cmd_actu(chat_id)
+    elif t_low == "/actu":                   threading.Thread(target=cmd_actu, args=(chat_id,), daemon=True).start()
     elif t_low.startswith("/news_deep"):
         idx = t_low.replace("/news_deep", "").strip()
-        cmd_news_deep(chat_id, idx)
+        threading.Thread(target=cmd_news_deep, args=(chat_id, idx), daemon=True).start()
     elif t_low == "/top":                    cmd_top(chat_id)
     elif t_low == "/chance":                 cmd_chance(chat_id)
     elif t_low == "/quote":                  cmd_quote(chat_id)
@@ -2658,11 +2663,11 @@ def handle_command(chat_id, text, user_name=""):
     elif t_low == "/menu_retour":            menu_retour_msg(chat_id)
     elif t_low == "/noop":                   pass
     # Signaux
-    elif t_low.startswith("/signal "):       cmd_signal(chat_id, t_low.replace("/signal ","").strip())
+    elif t_low.startswith("/signal "):       threading.Thread(target=cmd_signal, args=(chat_id, t_low.replace("/signal ","").strip()), daemon=True).start()
     # RSI
     elif t_low.startswith("/rsi"):
         parts = t_low.split()
-        cmd_rsi(chat_id, parts[1] if len(parts) > 1 else "btc")
+        threading.Thread(target=cmd_rsi, args=(chat_id, parts[1] if len(parts) > 1 else "btc"), daemon=True).start()
     # Paper trading
     elif t_low == "/paper_portfolio":
         if not is_premium(chat_id): return premium_lock(chat_id)
@@ -2778,4 +2783,3 @@ while True:
     except Exception as e:
         print(f"Erreur boucle: {e}")
         time.sleep(5)
-    

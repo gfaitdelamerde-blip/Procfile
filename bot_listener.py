@@ -696,7 +696,7 @@ Fournis:
 
 Format téléphone, utilise des emojis, max 400 mots."""
     try:
-        analyse = call_groq(prompt, max_tokens=600, temperature=0.3)
+        analyse = call_groq(prompt, max_tokens=600, temperature=0.3, model="llama-3.1-8b-instant")
         header = {"fr": "🔍 *ANALYSE APPROFONDIE*\n\n📰 _" + news['title'][:80] + "_\n\n", "en": "🔍 *DEEP ANALYSIS*\n\n📰 _" + news['title'][:80] + "_\n\n", "es": "🔍 *ANÁLISIS PROFUNDO*\n\n📰 _" + news['title'][:80] + "_\n\n"}.get(lang, "")
         btns = [[{"text": "📈 Voir les signaux", "callback_data": "/menu_signaux"}], [{"text": "📊 RSI", "callback_data": "/menu_rsi"}], [{"text": "🔙 Retour actu", "callback_data": "/actu"}]]
         send_message(chat_id, header + analyse, reply_markup={"inline_keyboard": btns})
@@ -754,14 +754,59 @@ def get_top5():
     return "\n".join(lines)
 
 # ================== IA ==================
-def call_groq(prompt, max_tokens=1100, temperature=0.4):
-    client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1", timeout=25.0)
-    r = client.chat.completions.create(
-        model=GROQ_MODEL,
-        messages=[{"role": "user", "content": prompt}],
-        temperature=temperature, max_tokens=max_tokens
-    )
-    return r.choices[0].message.content
+def call_groq(prompt, max_tokens=1100, temperature=0.4, model=None):
+    """Appel Groq avec gestion rate limit + logs détaillés"""
+    import time as _t
+    target_model = model or GROQ_MODEL
+    client = OpenAI(api_key=GROQ_API_KEY, base_url="https://api.groq.com/openai/v1", timeout=30.0)
+    _log_groq_call()
+    for attempt in range(3):
+        try:
+            r = client.chat.completions.create(
+                model=target_model,
+                messages=[{"role": "user", "content": prompt}],
+                temperature=temperature, max_tokens=max_tokens
+            )
+            return r.choices[0].message.content
+        except Exception as e:
+            err_str = str(e)
+            # Rate limit → attendre et réessayer
+            if "429" in err_str or "rate_limit" in err_str.lower() or "Too Many Requests" in err_str:
+                wait = 60 * (attempt + 1)
+                print(f"⚠️ Groq rate limit (tentative {attempt+1}/3) — attente {wait}s | model={target_model}")
+                _t.sleep(wait)
+                continue
+            # Auth error → inutile de réessayer
+            if "401" in err_str or "403" in err_str or "invalid_api_key" in err_str.lower():
+                print(f"🔴 Groq AUTH ERROR: {err_str[:200]}")
+                raise
+            # Modèle déprécié
+            if "decommissioned" in err_str or "deprecated" in err_str:
+                print(f"🔴 Groq MODEL ERROR: {err_str[:200]}")
+                raise
+            print(f"🔴 Groq erreur (tentative {attempt+1}/3): {err_str[:200]}")
+            if attempt < 2:
+                _t.sleep(5)
+    raise Exception(f"Groq indisponible après 3 tentatives (model={target_model})")
+
+# ---- Compteur d'appels Groq (pour debug quota) ----
+import time as _time_module
+_groq_call_log = []  # timestamps des appels
+
+def _log_groq_call():
+    now_ts = _time_module.time()
+    _groq_call_log.append(now_ts)
+    # Garde seulement les 24 dernières heures
+    cutoff = now_ts - 86400
+    while _groq_call_log and _groq_call_log[0] < cutoff:
+        _groq_call_log.pop(0)
+    count = len(_groq_call_log)
+    if count in [50, 80, 100]:
+        print(f"⚠️ QUOTA GROQ: {count} appels dans les dernières 24h")
+        try:
+            send_message(int(TELEGRAM_CHAT_ID), f"⚠️ *Quota Groq* : {count} appels/24h\nApproximation limite free tier: ~100-200/jour selon le modèle.")
+        except: pass
+    return count
 
 def generate_summary(news_list, market_str, lang="fr"):
     today = now_paris().strftime('%d/%m/%Y')
@@ -779,7 +824,7 @@ MARKETS: {market_str}
 *MARKET DIRECTION* -> Each asset: direction + probability % + short explanation
 *CONCLUSION*: General trend + probability
 Max 3500 characters."""
-    return call_groq(prompt, max_tokens=1100)
+    return call_groq(prompt, max_tokens=1100, model="llama-3.1-8b-instant")
 
 
 # ================== LECONS HEBDOMADAIRES ==================
@@ -1129,7 +1174,7 @@ NEWS THIS WEEK: {chr(10).join(news_list)}
 *TENDANCES À SURVEILLER* la semaine prochaine
 *PROBABILITÉS* pour la semaine à venir
 Max 3500 chars."""
-    return call_groq(prompt, max_tokens=1100)
+    return call_groq(prompt, max_tokens=1100, model="llama-3.1-8b-instant")
 
 def generate_hidden_gem(news_list):
     today = now_paris().strftime('%d/%m/%Y')
@@ -1166,7 +1211,7 @@ Respond in French with emojis:
 *ACHETER SUR*: platform
 ⚠️ _Pas un conseil financier. Investis ce que tu peux perdre._
 Max 1500 chars."""
-    return call_groq(prompt, max_tokens=700, temperature=0.6)
+    return call_groq(prompt, max_tokens=700, temperature=0.6, model="llama-3.1-8b-instant")
 
 # ================== PAPER TRADING ==================
 def paper_get_portfolio(chat_id):
@@ -2306,58 +2351,35 @@ def ai_check_stops(wallet):
     return auto_closed
 
 def ai_breaking_news_check():
-    """Detecte les grosses news toutes les 20 min et trade si necessaire"""
-    wallet = load_ai_wallet()
-    news = get_news()
-    if not news:
-        return
-
-    # Demande a Groq si une news est assez importante pour trader maintenant
-    news_str = "\n".join(news[:8])
-    portfolio_str = ""
-    for key, pos in wallet.get("portfolio", {}).items():
-        price = get_asset_price(pos["ticker"]) or pos.get("buy_price", 0)
-        is_short = pos.get("type") == "SHORT"
-        pnl_pct = ((pos["buy_price"] - price) if is_short else (price - pos["buy_price"])) / pos["buy_price"] * 100
-        portfolio_str += f"- {pos['name']} ({pos.get('type','LONG')}) P&L={pnl_pct:+.1f}%\n"
-
-    prompt = f"""Tu es ARIA, une IA de trading. Analyse ces actualites et dis si l'une d'elles justifie un trade immediat.\n"
-ACTUALITES:
-{news_str}
-
-POSITIONS ACTUELLES:
-{portfolio_str or "Aucune position"}
-Cash disponible: {wallet['balance']:,.2f}$
-
-Une "grosse news" justifiant un trade immediat est:
-- Annonce majeure d'une banque centrale (Fed, BCE)
-- Crash ou pump violent d'un marche (+/-5% en 1 journee)
-- Scandale/faillite d'une entreprise en portefeuille
-- Approbation ou refus ETF crypto
-- Resultats trimestriels tres au-dessus ou en dessous des attentes
-- Evenement geopolitique majeur (guerre, sanctions)
-- Adoption massive par une grande institution
-
-Reponds UNIQUEMENT en JSON:
-{{"breaking": true/false, "urgency": "high/medium/low", "summary": "Resume", "asset_key": null, "action": null, "reason": "Raison"}}"""
+    """Detects major breaking news every 2h and triggers trade if needed.
+    Uses llama-3.1-8b-instant (faster, cheaper) for the detection step."""
     try:
-        raw = call_groq(prompt, max_tokens=200, temperature=0.2)
+        news = get_news()
+        if not news:
+            return
+        # Utilise le modèle léger pour la détection (économise le quota)
+        FAST_MODEL = "llama-3.1-8b-instant"
+        news_str = "\n".join(news[:6])
+        prompt = f"""Analyse these news headlines. Is there a MAJOR market-moving event?
+MAJOR = Fed/ECB rate decision, crypto ETF approval/rejection, company bankruptcy, market crash >5%, geopolitical crisis.
+NEWS: {news_str}
+Reply ONLY in JSON: {{"breaking": true or false, "summary": "one sentence or empty", "asset": "btc/nvda/tsla/meta/aapl/msft/amzn/sp500 or null"}}"""
+        raw = call_groq(prompt, max_tokens=100, temperature=0.1, model=FAST_MODEL)
         raw = raw.strip()
-        start = raw.find("{"); end = raw.rfind("}") + 1
-        if start >= 0 and end > start:
-            raw = raw[start:end]
+        start_idx = raw.find("{"); end_idx = raw.rfind("}") + 1
+        if start_idx >= 0 and end_idx > start_idx:
+            raw = raw[start_idx:end_idx]
         result = json.loads(raw)
-        if result.get("breaking") and result.get("urgency") in ["high", "medium"] and result.get("action") and result.get("asset_key"):
-            print(f"BREAKING NEWS detectee: {result.get('summary','')}")
-            # Lance une analyse complete immediate
-            ai_run_analysis(breaking_news=result.get("summary",""))
+        if result.get("breaking"):
+            summary = result.get("summary","")
+            print(f"BREAKING NEWS detectee: {summary}")
+            # Lance l'analyse complète avec le modèle 70b
+            ai_run_analysis(breaking_news=summary)
         else:
             print(f"News check OK — pas d'urgence ({now_paris().strftime('%H:%M')})")
     except Exception as e:
         print(f"Erreur breaking news check: {e}")
 
-
-_ai_running = threading.Lock()  # Empêche deux analyses simultanées
 
 def ai_run_analysis(breaking_news=None):
     """Analyse + trade IA — sessions fixes + breaking news"""
@@ -2561,9 +2583,9 @@ def check_auto_send():
             except Exception as e:
                 print(f"Erreur IA session {session_name}: {e}")
 
-    # Breaking news : toutes les 20 min
-    news_flag = f"ai_news_{today}_{now.hour}_{(now.minute//20)*20}"
-    if not globals().get(news_flag) and now.second < 10:
+    # Breaking news : toutes les 2h (économise le quota Groq)
+    news_flag = f"ai_news_{today}_{now.hour // 2}"
+    if not globals().get(news_flag) and now.minute == 0 and now.second < 10:
         globals()[news_flag] = True
         try:
             threading.Thread(target=ai_breaking_news_check, daemon=True).start()
@@ -2783,3 +2805,4 @@ while True:
     except Exception as e:
         print(f"Erreur boucle: {e}")
         time.sleep(5)
+    

@@ -3224,8 +3224,10 @@ def _start_api_server():
     @app.route("/health")
     def health(): return "ok"
 
-    port = int(os.environ.get("PORT", 8080))
-    print(f"🌐 API démarrée sur le port {port}")
+    # Sur Railway, PORT est utilisé par le reverse proxy.
+    # On bind Flask sur FLASK_PORT (défaut 5000) pour éviter les conflits.
+    port = int(os.environ.get("FLASK_PORT", os.environ.get("PORT", 5000)))
+    print(f"🌐 API Flask démarrée sur le port {port}")
     app.run(host="0.0.0.0", port=port, debug=False, use_reloader=False)
 
 def _build_perf_history(w):
@@ -3265,7 +3267,22 @@ def handle_command(chat_id, text, user_name=""):
     elif t_low == "/chance":                 cmd_chance(chat_id)
     elif t_low == "/quote":                  cmd_quote(chat_id)
     elif t_low == "/aiwallet":                cmd_ai_wallet(chat_id)
-    elif t_low == "/mon_wallet":                cmd_mon_wallet(chat_id)
+    elif t_low in ["/mon_wallet", "/mywallet"]:
+        threading.Thread(target=cmd_mon_wallet, args=(chat_id,), daemon=True).start()
+    elif t_low == "/copytrade_toggle":
+        cmd_copytrade_toggle(chat_id)
+    elif t_low == "/uw_history":
+        cmd_uw_history(chat_id)
+    elif t_low == "/uw_buy":
+        cmd_uw_buy_menu(chat_id)
+    elif t_low == "/uw_sell":
+        cmd_uw_sell_menu(chat_id)
+    elif t_low.startswith("/uw_buy_asset"):
+        ak = t_low.replace("/uw_buy_asset", "").strip()
+        cmd_uw_buy_asset(chat_id, ak)
+    elif t_low.startswith("/uw_sell_asset"):
+        pk = t_low.replace("/uw_sell_asset", "").strip()
+        threading.Thread(target=cmd_uw_sell_asset, args=(chat_id, pk), daemon=True).start()
     elif t_low == "/score":                  cmd_score(chat_id)
     elif t_low == "/performance":            cmd_performance(chat_id)
     elif t_low == "/avis":                   cmd_avis(chat_id, user_name)

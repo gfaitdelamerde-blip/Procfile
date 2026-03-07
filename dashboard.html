@@ -165,10 +165,12 @@ input:checked+.toggle-slider::before{background:#000;transform:translateX(20px)}
   </header>
 
   <!-- TOKEN BAR -->
-  <div class="token-bar">
+  <div class="token-bar" id="tokenBar">
     <label>MON TOKEN →</label>
-    <input type="text" id="tokenInput" placeholder="Ton token dashboard (depuis /mon_wallet sur Telegram)" maxlength="20">
+    <input type="text" id="tokenInput" placeholder="Ton token (depuis /mon_wallet sur Telegram)" maxlength="20">
     <button onclick="loadUserWallet()">ACCÉDER À MON WALLET</button>
+    <button id="btnDisconnect" onclick="disconnectWallet()" style="display:none;background:var(--border);color:var(--dim)">✕ Déconnecter</button>
+    <span id="savedBadge" style="display:none;font-size:11px;color:var(--green);white-space:nowrap">✅ Connecté — rechargement auto</span>
   </div>
 
   <!-- TABS -->
@@ -413,12 +415,35 @@ async function loadUserWallet() {
     const d = await r.json();
     if(d.error){
       document.getElementById('mywallet-content').innerHTML = `<div class="empty"><div class="empty-icon">❌</div><p>${d.error}</p><p style="font-size:11px;margin-top:8px">Vérifie ton token avec /mon_wallet sur Telegram</p></div>`;
+      localStorage.removeItem('ariaWalletToken');
       return;
     }
+    // Token valide → on sauvegarde pour rechargement automatique
+    localStorage.setItem('ariaWalletToken', token);
+    showSavedState(token);
     renderUserWallet(d);
   } catch(e) {
     document.getElementById('mywallet-content').innerHTML = '<div class="empty"><div class="empty-icon">🔌</div><p>Serveur inaccessible</p></div>';
   }
+}
+
+function showSavedState(token) {
+  document.getElementById('tokenInput').value = token;
+  document.getElementById('tokenInput').style.opacity = '0.5';
+  document.getElementById('savedBadge').style.display = 'inline';
+  document.getElementById('btnDisconnect').style.display = 'inline-block';
+}
+
+function disconnectWallet() {
+  localStorage.removeItem('ariaWalletToken');
+  document.getElementById('tokenInput').value = '';
+  document.getElementById('tokenInput').style.opacity = '1';
+  document.getElementById('savedBadge').style.display = 'none';
+  document.getElementById('btnDisconnect').style.display = 'none';
+  currentToken = '';
+  document.getElementById('tab-mywallet').textContent = '💼 MON WALLET';
+  document.getElementById('mywallet-content').innerHTML = `<div class="empty"><div class="empty-icon">🔑</div><p>Entre ton token ci-dessus pour accéder à ton wallet</p><p style="font-size:11px;margin-top:8px">Obtiens ton token avec <strong>/mon_wallet</strong> sur Telegram</p></div>`;
+  switchTab('aria');
 }
 
 function renderUserWallet(d) {
@@ -556,10 +581,13 @@ const ARIA_TOKEN = "ARIA00000000";
 loadAria();
 setInterval(loadAria, 30000);
 
-// Auto-load token perso depuis URL param (?token=XXXX)
+// Auto-load token perso : URL param en priorité, sinon localStorage
 const urlToken = new URLSearchParams(window.location.search).get('token');
-if(urlToken){
-  document.getElementById('tokenInput').value = urlToken;
+const savedToken = localStorage.getItem('ariaWalletToken');
+const autoToken = urlToken || savedToken;
+if(autoToken){
+  document.getElementById('tokenInput').value = autoToken;
+  showSavedState(autoToken);
   loadUserWallet();
 }
 </script>
